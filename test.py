@@ -2,16 +2,15 @@ import cv2
 import numpy as np
 import tensorflow as tf
 import os
+from mediapipe.python.solutions import pose as mp_pose
+from mediapipe.python.solutions import drawing_utils as mp_drawing
 
 # --- USER PROFILE (CONSTANTS) ---
 USER_HEIGHT_CM = 193.0
 USER_WEIGHT_KG = 84.0
 REAL_SPINE_LENGTH_M = (USER_HEIGHT_CM * 0.29) / 100.0
 
-# --- IMPORTS & SETUP ---
-from mediapipe.python.solutions import pose as mp_pose
-from mediapipe.python.solutions import drawing_utils as mp_drawing
-
+# --- SETUP MODEL ---
 script_dir = os.path.dirname(os.path.abspath(__file__))
 model_path = os.path.join(script_dir, 'deep_squat_robust.keras')
 
@@ -29,68 +28,18 @@ except:
         model = None
 
 
-# --- UPDATED: STRICTER FORM JUDGE ---
-# --- UPDATED: MECHANICS JUDGE WITH STAGGER CHECK ---
-# --- UPDATED: TUNED MECHANICS JUDGE (TALL USER FRIENDLY) ---
-def analyze_form_mechanics_3d(world_landmarks, stage, knee_angle):
+# --- HELPER: CHECK ORIENTATION ---
+def is_profile_view(landmarks):
     """
-    Adjusted for Biomechanics:
-    1. Lean Threshold relaxed to 40 deg (accommodates long torso/femurs).
-    2. Only enforces lean when deep (prevents warnings during transition).
+    Returns True if user is standing sideways.
+    Logic: In profile, shoulders appear close together in X coordinate.
     """
-    penalty = 0.0
-    feedback = []
+    l_sh = landmarks[11]
+    r_sh = landmarks[12]
+    shoulder_width = abs(l_sh.x - r_sh.x)
+    # Threshold: Width must be < 20% of screen width to count as "Sideways"
+    return shoulder_width < 0.20
 
-    def ext(idx):
-        return np.array([world_landmarks[idx].x, world_landmarks[idx].y, world_landmarks[idx].z])
-
-    def unit_vector(v):
-        return v / np.linalg.norm(v)
-
-    # Get Key Landmarks
-    l_sh, r_sh = ext(11), ext(12)
-    l_hip, r_hip = ext(23), ext(24)
-    mid_sh, mid_hip = (l_sh + r_sh) / 2, (l_hip + r_hip) / 2
-
-    # --- CHECK 1: TRUNK LEAN (RELAXED) ---
-    spine_vec = mid_sh - mid_hip
-    vertical_vec = np.array([0, 1, 0])
-
-    dot_prod = np.dot(unit_vector(spine_vec), vertical_vec)
-    lean_angle_raw = np.degrees(np.arccos(np.clip(dot_prod, -1.0, 1.0)))
-    lean_from_vertical = abs(180 - lean_angle_raw)
-
-    # RULE: Only judge lean if we are actually squatting (angle < 160)
-    # AND we are in the 'DOWN' phase.
-    if stage == "DOWN" or knee_angle < 140:
-        # Threshold relaxed from 30 -> 40 degrees
-        if lean_from_vertical > 55:
-            penalty += 0.40
-            feedback.append(f"EXTREME LEAN ({int(lean_from_vertical)}°)")
-        elif lean_from_vertical > 40:
-            penalty += 0.40  # Lowered penalty weight too
-            feedback.append("Keep Chest Up")
-
-    # --- CHECK 2: TORSO ROUNDING (UNCHANGED) ---
-    collarbone_vec = r_sh - l_sh
-    dot_prod_round = np.abs(np.dot(unit_vector(spine_vec), unit_vector(collarbone_vec)))
-    rounding_angle = np.degrees(np.arcsin(np.clip(dot_prod_round, 0.0, 1.0)))
-
-    if stage == "DOWN":
-        if rounding_angle > 18:  # Slightly relaxed from 15 -> 18
-            penalty += 0.40
-            feedback.insert(0, "ROUNDING BACK!")
-
-            # --- CHECK 3: STAGGERED FEET ---
-    l_ankle, r_ankle = ext(27), ext(28)
-    stagger_dist = abs(l_ankle[0] - r_ankle[0])
-    shoulder_width = np.linalg.norm(l_sh - r_sh)
-
-    if stagger_dist > (shoulder_width * 0.5):  # Relaxed from 0.4 -> 0.5
-        penalty += 0.20
-        feedback.append("ALIGN FEET")
-
-    return penalty, feedback
 
 # --- HELPER: 3D ANGLE CALCULATION ---
 def calculate_angle_3d(a, b, c):
@@ -107,13 +56,11 @@ def calculate_angle_3d(a, b, c):
     return angle
 
 
-# --- AI DATA MAPPING (KEEPS 2D FOR COMPATIBILITY) ---
+# --- AI DATA MAPPING (2D) ---
 def get_uiprmd_mapping_calibrated(landmarks, calibration_scale=None):
     def ext(idx):
         return [landmarks[idx].x, -landmarks[idx].y, landmarks[idx].z]
 
-    # ... (Same logic as before to match training data) ...
-    # We do NOT change this function because the AI was trained on this specific 2D/pseudo-3D format
     left_hip, right_hip = np.array(ext(23)), np.array(ext(24))
     mid_hip = (left_hip + right_hip) / 2
     left_shoulder, right_shoulder = np.array(ext(11)), np.array(ext(12))
@@ -136,6 +83,66 @@ def get_uiprmd_mapping_calibrated(landmarks, calibration_scale=None):
     return np.concatenate(scaled_data)
 
 
+# --- MECHANICS JUDGE (TUNED FOR TALL USERS) ---
+def analyze_form_mechanics_3d(world_landmarks, stage, knee_angle):
+    """
+    1. Lean: Checks spinal tilt (Relaxed to 40deg).
+    2. Rounding: Checks shoulder roll (18deg).
+    3. Stagger: Checks foot alignment.
+    """
+    penalty = 0.0
+    feedback = []
+
+    def ext(idx):
+        return np.array([world_landmarks[idx].x, world_landmarks[idx].y, world_landmarks[idx].z])
+
+    def unit_vector(v):
+        return v / np.linalg.norm(v)
+
+    # Get Key Landmarks
+    l_sh, r_sh = ext(11), ext(12)
+    l_hip, r_hip = ext(23), ext(24)
+    mid_sh, mid_hip = (l_sh + r_sh) / 2, (l_hip + r_hip) / 2
+
+    # --- CHECK 1: TRUNK LEAN ---
+    spine_vec = mid_sh - mid_hip
+    vertical_vec = np.array([0, 1, 0])
+
+    dot_prod = np.dot(unit_vector(spine_vec), vertical_vec)
+    lean_angle_raw = np.degrees(np.arccos(np.clip(dot_prod, -1.0, 1.0)))
+    lean_from_vertical = abs(180 - lean_angle_raw)
+
+    # Only judge lean if we are deep enough (hinging is normal at start)
+    if stage == "DOWN" or knee_angle < 140:
+        if lean_from_vertical > 55:
+            penalty += 0.30
+            feedback.append(f"EXTREME LEAN ({int(lean_from_vertical)}°)")
+        elif lean_from_vertical > 40:  # Relaxed threshold
+            penalty += 0.10
+            feedback.append("Keep Chest Up")
+
+    # --- CHECK 2: TORSO ROUNDING ---
+    collarbone_vec = r_sh - l_sh
+    dot_prod_round = np.abs(np.dot(unit_vector(spine_vec), unit_vector(collarbone_vec)))
+    rounding_angle = np.degrees(np.arcsin(np.clip(dot_prod_round, 0.0, 1.0)))
+
+    if stage == "DOWN":
+        if rounding_angle > 18:  # Relaxed threshold
+            penalty += 0.20
+            feedback.insert(0, "ROUNDING BACK!")
+
+            # --- CHECK 3: STAGGERED FEET ---
+    l_ankle, r_ankle = ext(27), ext(28)
+    stagger_dist = abs(l_ankle[0] - r_ankle[0])
+    shoulder_width = np.linalg.norm(l_sh - r_sh)
+
+    if stagger_dist > (shoulder_width * 0.5):
+        penalty += 0.10
+        feedback.append("ALIGN FEET")
+
+    return penalty, feedback
+
+
 # --- MAIN APP LOOP ---
 pose = mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5)
 cap = cv2.VideoCapture(0)
@@ -147,6 +154,7 @@ current_state = STATE_CALIBRATING
 user_spine_px, pixels_per_meter = None, None
 start_hip_y, lowest_hip_y = 0, 0
 user_spine_norm = None
+max_rep_penalty = 0.0  # Remembers the worst error in a rep
 
 # SESSION VARS
 calib_frames_px, calib_frames_norm = [], []
@@ -155,8 +163,6 @@ stage = "UP"
 rep_scores, session_report = [], []
 sequence_buffer, physics_report = [], []
 current_feedback = ""
-
-max_rep_penalty = 0.0
 
 print(f"--- 3D HYBRID MODE ACTIVE ---")
 
@@ -174,35 +180,46 @@ while cap.isOpened():
         landmarks_2d = results.pose_landmarks.landmark
         landmarks_3d = results.pose_world_landmarks.landmark
 
-        # --- PHASE 1: CALIBRATION ---
+        # --- PHASE 1: CALIBRATION (WITH SIDE-VIEW CHECK) ---
         if current_state == STATE_CALIBRATING:
-            cv2.putText(frame, "CALIBRATION...", (10, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
-            cv2.putText(frame, "Stand Profile & Still", (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 200, 200), 1)
+            # 1. FORCE PROFILE VIEW
+            if not is_profile_view(landmarks_2d):
+                cv2.putText(frame, "TURN SIDEWAYS", (180, 300), cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0, 0, 255), 3)
+                cv2.putText(frame, "Camera must see side profile", (170, 340), cv2.FONT_HERSHEY_SIMPLEX, 0.6,
+                            (200, 200, 200), 1)
+                calib_frames_px = []  # Reset progress
+
+            else:
+                # 2. PROCEED
+                cv2.putText(frame, "CALIBRATING...", (10, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
+                cv2.putText(frame, "Stay Still", (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 200, 200), 1)
 
 
-            def ext_y_px(idx):
-                return landmarks_2d[idx].y * frame.shape[0]
+                def ext_y_px(idx):
+                    return landmarks_2d[idx].y * frame.shape[0]
 
 
-            current_spine_px = abs(((ext_y_px(23) + ext_y_px(24)) / 2) - ((ext_y_px(11) + ext_y_px(12)) / 2))
-            calib_frames_px.append(current_spine_px)
+                current_spine_px = abs(((ext_y_px(23) + ext_y_px(24)) / 2) - ((ext_y_px(11) + ext_y_px(12)) / 2))
+                calib_frames_px.append(current_spine_px)
 
 
-            def ext_norm(idx):
-                return np.array([landmarks_2d[idx].x, -landmarks_2d[idx].y, landmarks_2d[idx].z])
+                def ext_norm(idx):
+                    return np.array([landmarks_2d[idx].x, -landmarks_2d[idx].y, landmarks_2d[idx].z])
 
 
-            current_spine_norm = np.linalg.norm(
-                ((ext_norm(11) + ext_norm(12)) / 2) - ((ext_norm(23) + ext_norm(24)) / 2))
-            calib_frames_norm.append(current_spine_norm)
+                current_spine_norm = np.linalg.norm(
+                    ((ext_norm(11) + ext_norm(12)) / 2) - ((ext_norm(23) + ext_norm(24)) / 2))
+                calib_frames_norm.append(current_spine_norm)
 
-            cv2.rectangle(frame, (0, 85), (int(640 * (len(calib_frames_px) / 60)), 90), (0, 255, 0), -1)
+                # Progress Bar
+                bar_len = int(640 * (len(calib_frames_px) / 60))
+                cv2.rectangle(frame, (0, 85), (bar_len, 90), (0, 255, 0), -1)
 
-            if len(calib_frames_px) >= 60:
-                user_spine_px = np.median(calib_frames_px)
-                user_spine_norm = np.median(calib_frames_norm)
-                pixels_per_meter = user_spine_px / REAL_SPINE_LENGTH_M
-                current_state = STATE_WARMUP
+                if len(calib_frames_px) >= 60:
+                    user_spine_px = np.median(calib_frames_px)
+                    user_spine_norm = np.median(calib_frames_norm)
+                    pixels_per_meter = user_spine_px / REAL_SPINE_LENGTH_M
+                    current_state = STATE_WARMUP
 
         # --- PHASE 2: WARMUP ---
         elif current_state == STATE_WARMUP:
@@ -228,7 +245,7 @@ while cap.isOpened():
             sequence_buffer.append(model_input)
             sequence_buffer = sequence_buffer[-81:]
 
-            # 3. Geometry
+            # 3. Geometry (3D)
             hip = landmarks_3d[23]
             knee = landmarks_3d[25]
             ankle = landmarks_3d[27]
@@ -237,6 +254,7 @@ while cap.isOpened():
             # --- HYBRID JUDGE ---
             current_penalty, issues = analyze_form_mechanics_3d(landmarks_3d, stage, angle)
 
+            # MEMORY: Track worst error in this rep
             if stage == "DOWN":
                 if current_penalty > max_rep_penalty:
                     max_rep_penalty = current_penalty
@@ -250,7 +268,7 @@ while cap.isOpened():
             if angle < 120 and stage == "UP":
                 stage = "DOWN"
                 lowest_hip_y = hip_y_px
-                max_rep_penalty = 0.0
+                max_rep_penalty = 0.0  # Reset for new rep
 
             if angle > 160:
                 if stage == "DOWN":
@@ -263,13 +281,11 @@ while cap.isOpened():
                         top_scores = rep_scores[:max(1, int(len(rep_scores) * 0.3))]
                         final_grade = sum(top_scores) / len(top_scores)
 
-                    # --- SCALING FIX (The 100% Patch) ---
-                    # 1. Scale AI score up by 15% (turns 0.87 into 1.0)
+                    # --- SCALING: Curve the grade (1.15x) ---
                     scaled_ai_score = min(1.0, final_grade * 1.15)
 
-                    # 2. Apply Penalty to the SCALED score
+                    # Apply penalty to SCALED score
                     final_score = max(0.0, scaled_ai_score - max_rep_penalty)
-
                     session_report.append(final_score)
 
                     # Calc Work
@@ -279,6 +295,9 @@ while cap.isOpened():
 
                     print(
                         f"Rep {reps_completed}: AI {int(final_grade * 100)}% -> Scaled {int(scaled_ai_score * 100)}% - Pen {int(max_rep_penalty * 100)}% = FINAL {int(final_score * 100)}%")
+
+                    # Placeholder for Firebase Upload
+                    # upload_session_to_cloud(...)
 
                     rep_scores = []
                     max_rep_penalty = 0.0
@@ -298,11 +317,11 @@ while cap.isOpened():
                 input_tensor = np.expand_dims(sequence_buffer, axis=0)
                 pred = model.predict(input_tensor, verbose=0)[0][0]
 
-                # Curve the live bar too
+                # Curve live bar
                 curved_pred = min(1.0, pred * 1.15)
                 display_score = max(0, curved_pred - current_penalty)
 
-                rep_scores.append(pred)  # Keep tracking raw for stats
+                rep_scores.append(pred)
 
                 bar_width = int(display_score * 150)
                 color = (0, 255, 0) if display_score > 0.8 else (0, 0, 255)
@@ -313,8 +332,6 @@ while cap.isOpened():
         mp_drawing.draw_landmarks(frame, results.pose_landmarks, mp_pose.POSE_CONNECTIONS)
 
     cv2.imshow('Physio-Vision Hybrid 3D', frame)
-
-
     if cv2.waitKey(10) & 0xFF == ord('q'): break
 
 cap.release()
@@ -326,7 +343,7 @@ print(f"   PHYSIO-VISION REPORT (User: {int(USER_HEIGHT_CM)}cm/{int(USER_WEIGHT_
 print("=" * 45)
 for i, (depth, work) in enumerate(physics_report):
     grade = session_report[i] if i < len(session_report) else 0.0
-    status = "EXCELLENT" if grade > 0.8 else "GOOD" if grade > 0.6 else "IMPROVE"
+    status = "EXCELLENT" if grade > 0.9 else "GOOD" if grade > 0.7 else "IMPROVE"
     print(f"Rep {i + 1}: {int(grade * 100)}/100 [{status}]")
     print(f"  > Depth: {int(depth * 100)}cm | Energy: {int(work)}J")
 print("=" * 45)
