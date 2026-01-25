@@ -1,0 +1,22 @@
+# Sensitive Credentials & Environment Variables
+.env
+.env.local
+*.key
+*.pem
+secrets.json
+
+# Dependencies (Too large and should be installed, not copied)
+node_modules/
+__pycache__/
+venv/
+.mvn/
+vendor/
+
+# OS Generated Files
+.DS_Store
+Thumbs.db
+
+# Build outputs
+dist/
+build/
+*.log
