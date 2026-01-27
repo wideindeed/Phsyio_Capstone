@@ -1,95 +1,177 @@
+import sys
 import cv2
+import time
+import threading
 import numpy as np
-import tensorflow as tf
+import pyttsx3
 import os
+import math
+from datetime import datetime
+
+# --- 1. CRASH PREVENTION ---
+os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
+os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
+os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "1"
+
+# --- 2. GUI IMPORTS ---
+from PyQt5.QtCore import Qt, QThread, pyqtSignal as Signal, pyqtSlot as Slot, QSize, QPropertyAnimation, QTimer
+from PyQt5.QtGui import QImage, QPixmap, QColor
+from PyQt5.QtWidgets import (QApplication, QVBoxLayout, QHBoxLayout, QWidget,
+                             QLabel, QSizePolicy, QScrollArea, QFrame, QGraphicsOpacityEffect)
+
+from qfluentwidgets import (FluentWindow, NavigationItemPosition, TitleLabel,
+                            PrimaryPushButton, ProgressBar, BodyLabel, StrongBodyLabel,
+                            CardWidget, setTheme, Theme, LineEdit, SwitchButton,
+                            InfoBar, InfoBarPosition, ScrollArea,
+                            ExpandGroupSettingCard, DoubleSpinBox, IconWidget, ToolButton)
+from qfluentwidgets import FluentIcon as FIF
+
+# --- 3. AI IMPORTS ---
 from mediapipe.python.solutions import pose as mp_pose
 from mediapipe.python.solutions import drawing_utils as mp_drawing
 
-# --- USER PROFILE (CONSTANTS) ---
-USER_HEIGHT_CM = 193.0
-USER_WEIGHT_KG = 84.0
-REAL_SPINE_LENGTH_M = (USER_HEIGHT_CM * 0.29) / 100.0
 
-# --- SETUP MODEL ---
-script_dir = os.path.dirname(os.path.abspath(__file__))
-model_path = os.path.join(script_dir, 'deep_squat_robust.keras')
+# =============================================================================
+#  GLOBAL STATE & TUNING PARAMETERS
+# =============================================================================
+class AppState:
+    # --- USER STATS ---
+    USER_HEIGHT_CM = 180.0
+    USER_WEIGHT_KG = 75.0
 
-try:
-    model = tf.keras.models.load_model(model_path)
-    print("AI Model loaded.")
-except:
-    try:
-        from keras.models import load_model
+    # --- SYSTEM SETTINGS ---
+    VOICE_ON = True
+    AR_MODE = False
+    GUIDE_PATH = "Video_Generation_Person_Squatting.mp4"  # <--- CHECK THIS PATH
 
-        model = load_model(model_path)
-        print("AI Model loaded (Fallback).")
-    except:
-        print("Warning: Model not found. Running in Physics Mode.")
-        model = None
+    # --- LIVE TUNING PARAMETERS (The "Developer" variables) ---
+    PARAM_SQUAT_DEPTH = 140.0  # Angle to count as "Down" (Lower is deeper)
+    PARAM_UP_THRESHOLD = 160.0  # Angle to count as "Up" (Standing)
+    PARAM_LEAN_WARN = 40.0  # Degrees of lean to trigger "Chest Up"
+    PARAM_LEAN_CRIT = 55.0  # Degrees of lean to trigger "Critical Lean"
+    PARAM_ROUNDING = 18.0  # Degrees of back curvature allowed
 
-
-# --- HELPER: CHECK ORIENTATION ---
-def is_profile_view(landmarks):
-    """
-    Returns True if user is standing sideways.
-    Logic: In profile, shoulders appear close together in X coordinate.
-    """
-    l_sh = landmarks[11]
-    r_sh = landmarks[12]
-    shoulder_width = abs(l_sh.x - r_sh.x)
-    # Threshold: Width must be < 20% of screen width to count as "Sideways"
-    return shoulder_width < 0.20
+    HISTORY = []
 
 
-# --- HELPER: 3D ANGLE CALCULATION ---
+state = AppState()
+
+
+# =============================================================================
+#  PART 1: THE HOLOGRAPHIC ENGINE
+# =============================================================================
+
+class HologramProjector:
+    def __init__(self):
+        self.spin_angle_1 = 0
+        self.spin_angle_2 = 0
+        self.pulse_val = 0
+        self.pulse_dir = 1
+        self.lock_anim = 0.0
+
+    def draw(self, frame, landmarks, width, height):
+        self.spin_angle_1 = (self.spin_angle_1 + 2) % 360
+        self.spin_angle_2 = (self.spin_angle_2 - 3) % 360
+        self.pulse_val += 0.05 * self.pulse_dir
+        if self.pulse_val > 1.0 or self.pulse_val < 0.0: self.pulse_dir *= -1
+
+        cx, cy = int(width // 2), int(height * 0.85)
+        base_w, base_h = 140, 50
+
+        overlay = frame.copy()
+        status = "SEARCHING..."
+        color_base = (255, 200, 0)
+        color_lock = (0, 215, 255)
+        color_warn = (0, 0, 255)
+
+        active_color = color_base
+        in_zone = False
+
+        if landmarks:
+            l_ankle = landmarks[27]
+            r_ankle = landmarks[28]
+            lx, ly = int(l_ankle.x * width), int(l_ankle.y * height)
+            rx, ry = int(r_ankle.x * width), int(r_ankle.y * height)
+            fx, fy = (lx + rx) // 2, (ly + ry) // 2
+
+            dist = math.hypot(cx - fx, cy - fy)
+            in_zone = dist < 70
+
+            if in_zone:
+                self.lock_anim = min(1.0, self.lock_anim + 0.1)
+                active_color = color_lock
+                status = "TARGET LOCKED"
+            else:
+                self.lock_anim = max(0.0, self.lock_anim - 0.1)
+                if fy < (cy - 60):
+                    active_color = color_warn; status = "MOVE BACK"
+                elif fy > (cy + 60):
+                    active_color = color_warn; status = "MOVE FWD"
+
+            cv2.line(overlay, (lx, ly), (cx, cy), active_color, 1)
+            cv2.line(overlay, (rx, ry), (cx, cy), active_color, 1)
+            cv2.circle(overlay, (lx, ly), 4, active_color, -1)
+            cv2.circle(overlay, (rx, ry), 4, active_color, -1)
+
+        # Reactor Core
+        core_size = int(10 + 5 * self.pulse_val)
+        cv2.ellipse(overlay, (cx, cy), (core_size * 2, core_size), 0, 0, 360, active_color, -1)
+
+        # Rings
+        start_ang = self.spin_angle_2
+        for i in range(3):
+            s = start_ang + (i * 120)
+            cv2.ellipse(overlay, (cx, cy), (base_w - 20, base_h - 10), 0, s, s + 80, active_color, 2)
+
+        if self.lock_anim > 0.8:
+            cv2.ellipse(overlay, (cx, cy), (base_w, base_h), 0, 0, 360, active_color, 3)
+        else:
+            start_ang = self.spin_angle_1
+            for i in range(4):
+                s = start_ang + (i * 90)
+                cv2.ellipse(overlay, (cx, cy), (base_w, base_h), 0, s, s + 40, active_color, 2)
+
+        # Grid & Text
+        grid_alpha = 0.3
+        grid_overlay = overlay.copy()
+        for i in range(0, 180, 20):
+            rad = math.radians(i)
+            x_off = int(math.cos(rad) * (base_w + 50))
+            y_off = int(math.sin(rad) * (base_h + 30))
+            cv2.line(grid_overlay, (cx, cy), (cx + x_off, cy + y_off), active_color, 1)
+        cv2.addWeighted(grid_overlay, grid_alpha, overlay, 1 - grid_alpha, 0, overlay)
+
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        cv2.putText(overlay, f"STATUS: {status}", (cx - 80, cy + base_h + 40), font, 0.5, active_color, 1)
+
+        cv2.addWeighted(overlay, 0.6, frame, 0.4, 0, frame)
+        return in_zone
+
+
+hologram = HologramProjector()
+
+
+# =============================================================================
+#  PART 2: THE MATH ENGINE (Now Linked to Live State)
+# =============================================================================
+
 def calculate_angle_3d(a, b, c):
-    """Calculates angle ABC using 3D coordinates"""
     a = np.array([a.x, a.y, a.z])
     b = np.array([b.x, b.y, b.z])
     c = np.array([c.x, c.y, c.z])
-
     ba = a - b
     bc = c - b
-
     cosine_angle = np.dot(ba, bc) / (np.linalg.norm(ba) * np.linalg.norm(bc))
-    angle = np.degrees(np.arccos(np.clip(cosine_angle, -1.0, 1.0)))
-    return angle
+    return np.degrees(np.arccos(np.clip(cosine_angle, -1.0, 1.0)))
 
 
-# --- AI DATA MAPPING (2D) ---
-def get_uiprmd_mapping_calibrated(landmarks, calibration_scale=None):
-    def ext(idx):
-        return [landmarks[idx].x, -landmarks[idx].y, landmarks[idx].z]
-
-    left_hip, right_hip = np.array(ext(23)), np.array(ext(24))
-    mid_hip = (left_hip + right_hip) / 2
-    left_shoulder, right_shoulder = np.array(ext(11)), np.array(ext(12))
-    spine_shoulder = (left_shoulder + right_shoulder) / 2
-    joint_data = [
-        mid_hip, mid_hip, spine_shoulder,
-        ext(0), ext(0), ext(11), ext(13), ext(15), ext(19),
-        ext(12), ext(14), ext(16), ext(20),
-        ext(23), ext(25), ext(27), ext(31),
-        ext(24), ext(26), ext(28), ext(32),
-        spine_shoulder
-    ]
-    root = joint_data[0]
-    centered_data = [j - root for j in joint_data]
-    if calibration_scale:
-        spine_len = calibration_scale
-    else:
-        spine_len = np.linalg.norm(centered_data[2] - centered_data[0]) or 1.0
-    scaled_data = [j / spine_len for j in centered_data]
-    return np.concatenate(scaled_data)
+def is_profile_view(landmarks):
+    l_sh = landmarks[11]
+    r_sh = landmarks[12]
+    return abs(l_sh.x - r_sh.x) < 0.20
 
 
-# --- MECHANICS JUDGE (TUNED FOR TALL USERS) ---
 def analyze_form_mechanics_3d(world_landmarks, stage, knee_angle):
-    """
-    1. Lean: Checks spinal tilt (Relaxed to 40deg).
-    2. Rounding: Checks shoulder roll (18deg).
-    3. Stagger: Checks foot alignment.
-    """
     penalty = 0.0
     feedback = []
 
@@ -99,251 +181,571 @@ def analyze_form_mechanics_3d(world_landmarks, stage, knee_angle):
     def unit_vector(v):
         return v / np.linalg.norm(v)
 
-    # Get Key Landmarks
     l_sh, r_sh = ext(11), ext(12)
     l_hip, r_hip = ext(23), ext(24)
     mid_sh, mid_hip = (l_sh + r_sh) / 2, (l_hip + r_hip) / 2
 
-    # --- CHECK 1: TRUNK LEAN ---
+    # --- 1. DYNAMIC LEAN CHECK ---
+    # We use state.PARAM_LEAN_WARN instead of hardcoded numbers
+    lean_tolerance = state.PARAM_LEAN_WARN + (state.USER_HEIGHT_CM - 170) * 0.1
+
     spine_vec = mid_sh - mid_hip
     vertical_vec = np.array([0, 1, 0])
+    lean_angle = np.degrees(np.arccos(np.clip(np.dot(unit_vector(spine_vec), vertical_vec), -1.0, 1.0)))
+    lean_from_vertical = abs(180 - lean_angle)
 
-    dot_prod = np.dot(unit_vector(spine_vec), vertical_vec)
-    lean_angle_raw = np.degrees(np.arccos(np.clip(dot_prod, -1.0, 1.0)))
-    lean_from_vertical = abs(180 - lean_angle_raw)
-
-    # Only judge lean if we are deep enough (hinging is normal at start)
-    if stage == "DOWN" or knee_angle < 140:
-        if lean_from_vertical > 55:
+    if stage == "DOWN" or knee_angle < state.PARAM_SQUAT_DEPTH:
+        if lean_from_vertical > state.PARAM_LEAN_CRIT:
             penalty += 0.30
-            feedback.append(f"EXTREME LEAN ({int(lean_from_vertical)}°)")
-        elif lean_from_vertical > 40:  # Relaxed threshold
+            feedback.append("CRITICAL LEAN")
+        elif lean_from_vertical > lean_tolerance:
             penalty += 0.10
-            feedback.append("Keep Chest Up")
+            feedback.append("Chest Up")
 
-    # --- CHECK 2: TORSO ROUNDING ---
+    # --- 2. DYNAMIC ROUNDING CHECK ---
     collarbone_vec = r_sh - l_sh
     dot_prod_round = np.abs(np.dot(unit_vector(spine_vec), unit_vector(collarbone_vec)))
     rounding_angle = np.degrees(np.arcsin(np.clip(dot_prod_round, 0.0, 1.0)))
 
-    if stage == "DOWN":
-        if rounding_angle > 18:  # Relaxed threshold
-            penalty += 0.20
-            feedback.insert(0, "ROUNDING BACK!")
-
-            # --- CHECK 3: STAGGERED FEET ---
-    l_ankle, r_ankle = ext(27), ext(28)
-    stagger_dist = abs(l_ankle[0] - r_ankle[0])
-    shoulder_width = np.linalg.norm(l_sh - r_sh)
-
-    if stagger_dist > (shoulder_width * 0.5):
-        penalty += 0.10
-        feedback.append("ALIGN FEET")
+    if stage == "DOWN" and rounding_angle > state.PARAM_ROUNDING:
+        penalty += 0.20
+        feedback.insert(0, "BACK ROUNDING")
 
     return penalty, feedback
 
 
-# --- MAIN APP LOOP ---
-pose = mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5)
-cap = cv2.VideoCapture(0)
+# =============================================================================
+#  PART 3: WORKER & AUDIO
+# =============================================================================
 
-STATE_CALIBRATING, STATE_WARMUP, STATE_SESSION = 0, 1, 2
-current_state = STATE_CALIBRATING
+def speak_async(text):
+    if not state.VOICE_ON: return
 
-# PHYSICS VARS
-user_spine_px, pixels_per_meter = None, None
-start_hip_y, lowest_hip_y = 0, 0
-user_spine_norm = None
-max_rep_penalty = 0.0  # Remembers the worst error in a rep
+    def _speak():
+        try:
+            engine = pyttsx3.init()
+            engine.say(text)
+            engine.runAndWait()
+        except:
+            pass
 
-# SESSION VARS
-calib_frames_px, calib_frames_norm = [], []
-reps_completed, target_reps = 0, 5
-stage = "UP"
-rep_scores, session_report = [], []
-sequence_buffer, physics_report = [], []
-current_feedback = ""
+    threading.Thread(target=_speak, daemon=True).start()
 
-print(f"--- 3D HYBRID MODE ACTIVE ---")
 
-while cap.isOpened():
-    ret, frame = cap.read()
-    if not ret: break
+class VisionWorker(QThread):
+    frame_processed = Signal(QImage)
+    stats_update = Signal(dict)
+    system_status = Signal(str, str)
+    session_finished = Signal(dict)
 
-    frame = cv2.flip(frame, 1)
-    rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    results = pose.process(rgb_frame)
+    def __init__(self):
+        super().__init__()
+        self.running = False
+        self.pose = mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5)
+        self.reset_session()
+        self.STATE_CALIB, self.STATE_WARMUP, self.STATE_SESSION = 0, 1, 2
+        self.current_state = 0
 
-    cv2.rectangle(frame, (0, 0), (640, 90), (30, 30, 30), -1)
+    def reset_session(self):
+        self.reps = 0
+        self.stage = "UP"
+        self.max_rep_penalty = 0.0
+        self.last_speech_time = 0
+        self.calib_data = []
+        self.session_log = []
+        self.start_time = None
+        self.ar_locked = False
 
-    if results.pose_landmarks and results.pose_world_landmarks:
+    def run(self):
+        self.cap = cv2.VideoCapture(0)
+        self.running = True
+        self.current_state = self.STATE_CALIB
+        self.reset_session()
+        self.start_time = datetime.now()
+        self.system_status.emit("INITIALIZING...", "#ffaa00")
+
+        while self.running and self.cap.isOpened():
+            ret, frame = self.cap.read()
+            if not ret: break
+
+            frame = cv2.flip(frame, 1)
+            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            h, w, ch = rgb_frame.shape
+
+            results = self.pose.process(rgb_frame)
+
+            if state.AR_MODE:
+                landmarks_list = results.pose_landmarks.landmark if results.pose_landmarks else None
+                self.ar_locked = hologram.draw(rgb_frame, landmarks_list, w, h)
+                if not self.ar_locked and self.current_state == self.STATE_SESSION:
+                    cv2.putText(rgb_frame, "ALIGN WITH TARGET", (50, 50),
+                                cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
+            else:
+                self.ar_locked = True
+
+            if results.pose_landmarks and self.ar_locked:
+                mp_drawing.draw_landmarks(rgb_frame, results.pose_landmarks, mp_pose.POSE_CONNECTIONS)
+                self.process_logic(results)
+
+            qt_img = QImage(rgb_frame.data, w, h, ch * w, QImage.Format_RGB888)
+            self.frame_processed.emit(qt_img)
+            self.msleep(30)
+
+        self.cap.release()
+
+        final_score = self.calculate_avg_score()
+        report = {
+            "date": self.start_time.strftime("%Y-%m-%d %H:%M"),
+            "reps": self.reps,
+            "avg_score": final_score,
+            "details": self.session_log
+        }
+        self.session_finished.emit(report)
+
+    def calculate_avg_score(self):
+        if not self.session_log: return 0
+        total = sum([x['score'] for x in self.session_log])
+        return int(total / len(self.session_log))
+
+    def process_logic(self, results):
         landmarks_2d = results.pose_landmarks.landmark
-        landmarks_3d = results.pose_world_landmarks.landmark
 
-        # --- PHASE 1: CALIBRATION (WITH SIDE-VIEW CHECK) ---
-        if current_state == STATE_CALIBRATING:
-            # 1. FORCE PROFILE VIEW
+        if self.current_state == self.STATE_CALIB:
             if not is_profile_view(landmarks_2d):
-                cv2.putText(frame, "TURN SIDEWAYS", (180, 300), cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0, 0, 255), 3)
-                cv2.putText(frame, "Camera must see side profile", (170, 340), cv2.FONT_HERSHEY_SIMPLEX, 0.6,
-                            (200, 200, 200), 1)
-                calib_frames_px = []  # Reset progress
-
+                self.system_status.emit("Turn Sideways", "#ff4444")
+                self.calib_data = []
             else:
-                # 2. PROCEED
-                cv2.putText(frame, "CALIBRATING...", (10, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
-                cv2.putText(frame, "Stay Still", (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 200, 200), 1)
+                self.system_status.emit("CALIBRATING...", "#0099ff")
+                self.calib_data.append(1)
+                if len(self.calib_data) > 30:
+                    self.current_state = self.STATE_WARMUP
+                    speak_async("System Ready.")
+
+        elif self.current_state == self.STATE_WARMUP:
+            self.system_status.emit("START SQUATTING", "#00cc66")
+            time.sleep(0.5)
+            self.current_state = self.STATE_SESSION
+
+        elif self.current_state == self.STATE_SESSION:
+            landmarks_3d = results.pose_world_landmarks.landmark
+            angle = calculate_angle_3d(landmarks_3d[23], landmarks_3d[25], landmarks_3d[27])
+
+            penalty, issues = analyze_form_mechanics_3d(landmarks_3d, self.stage, angle)
+
+            if self.stage == "DOWN" and penalty > self.max_rep_penalty:
+                self.max_rep_penalty = penalty
+
+            if issues and (time.time() - self.last_speech_time > 3.0):
+                speak_async(issues[0])
+                self.last_speech_time = time.time()
+
+            # Dynamic Rep Counting
+            if angle < state.PARAM_SQUAT_DEPTH and self.stage == "UP":
+                self.stage = "DOWN"
+                self.max_rep_penalty = 0.0
+
+            if angle > state.PARAM_UP_THRESHOLD and self.stage == "DOWN":
+                self.stage = "UP"
+                self.reps += 1
+                score = int(max(0.0, min(1.0, 1.0 * 1.15) - self.max_rep_penalty) * 100)
+
+                log_entry = {"rep_num": self.reps, "score": score, "issue": issues[0] if issues else "Perfect Form"}
+                self.session_log.append(log_entry)
+
+                self.stats_update.emit({"reps": self.reps, "score": score, "feedback": log_entry['issue']})
+
+                phrase = f"Rep {self.reps}"
+                if issues: phrase += f". {issues[0]}"
+                speak_async(phrase)
+
+    def stop(self):
+        self.running = False
+        self.wait()
 
 
-                def ext_y_px(idx):
-                    return landmarks_2d[idx].y * frame.shape[0]
+# =============================================================================
+#  PART 4: WINDOWS (Developer, Reference, Settings)
+# =============================================================================
+
+class DeveloperToolsWindow(QWidget):
+    """
+    THE DEVELOPER CONSOLE: Live Parameter Tuning
+    """
+
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Physio DevTools (Live)")
+        self.resize(350, 450)
+        self.setWindowFlags(Qt.WindowStaysOnTopHint)
+        self.setStyleSheet("background-color: #2b2b2b; color: white;")
+
+        layout = QVBoxLayout(self)
+        layout.setSpacing(15)
+
+        layout.addWidget(StrongBodyLabel("Real-Time Mechanics Engine"))
+
+        # Helper to create sliders
+        def create_tuner(label, val, min_v, max_v, callback):
+            l = QHBoxLayout()
+            l.addWidget(BodyLabel(label))
+            spin = DoubleSpinBox()
+            spin.setRange(min_v, max_v)
+            spin.setValue(val)
+            spin.valueChanged.connect(callback)
+            l.addWidget(spin)
+            layout.addLayout(l)
+
+        # 1. Squat Depth
+        create_tuner("Squat Depth (Deg)", state.PARAM_SQUAT_DEPTH, 90, 170,
+                     lambda v: setattr(state, 'PARAM_SQUAT_DEPTH', v))
+
+        # 2. Stand Up Threshold
+        create_tuner("Stand Up (Deg)", state.PARAM_UP_THRESHOLD, 150, 180,
+                     lambda v: setattr(state, 'PARAM_UP_THRESHOLD', v))
+
+        # 3. Lean Warning
+        create_tuner("Lean Warn (Deg)", state.PARAM_LEAN_WARN, 10, 80,
+                     lambda v: setattr(state, 'PARAM_LEAN_WARN', v))
+
+        # 4. Critical Lean
+        create_tuner("Lean Crit (Deg)", state.PARAM_LEAN_CRIT, 20, 90,
+                     lambda v: setattr(state, 'PARAM_LEAN_CRIT', v))
+
+        # 5. Rounding
+        create_tuner("Back Rounding (Deg)", state.PARAM_ROUNDING, 5, 45,
+                     lambda v: setattr(state, 'PARAM_ROUNDING', v))
+
+        layout.addStretch(1)
+        layout.addWidget(BodyLabel("Changes apply immediately to next frame."))
 
 
-                current_spine_px = abs(((ext_y_px(23) + ext_y_px(24)) / 2) - ((ext_y_px(11) + ext_y_px(12)) / 2))
-                calib_frames_px.append(current_spine_px)
+class ReferenceWindow(QWidget):
+    def __init__(self, video_path):
+        super().__init__()
+        self.setWindowTitle("Pro Form Guide")
+        self.resize(400, 600)
+        self.setWindowFlags(Qt.WindowStaysOnTopHint)
+        self.setStyleSheet("background-color: #1e1e1e; border: 1px solid #333;")
+        self.layout = QVBoxLayout(self)
+        self.layout.setContentsMargins(0, 0, 0, 0)
+        self.video_label = QLabel("Loading Guide...")
+        self.video_label.setAlignment(Qt.AlignCenter)
+        self.video_label.setStyleSheet("background-color: black;")
+        self.video_label.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
+        self.layout.addWidget(self.video_label)
+        self.cap = cv2.VideoCapture(video_path)
+        self.timer = QTimer()
+        self.timer.timeout.connect(self.next_frame)
+        self.timer.start(30)
+
+    def next_frame(self):
+        if self.cap.isOpened():
+            ret, frame = self.cap.read()
+            if not ret:
+                self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                return
+            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            h, w, ch = frame.shape
+            qt_img = QImage(frame.data, w, h, ch * w, QImage.Format_RGB888)
+            pix = QPixmap.fromImage(qt_img).scaled(self.video_label.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            self.video_label.setPixmap(pix)
+
+    def closeEvent(self, event):
+        self.timer.stop()
+        self.cap.release()
+        event.accept()
 
 
-                def ext_norm(idx):
-                    return np.array([landmarks_2d[idx].x, -landmarks_2d[idx].y, landmarks_2d[idx].z])
+# =============================================================================
+#  PART 5: DASHBOARD PAGES
+# =============================================================================
+
+class SettingsPage(ScrollArea):
+    def __init__(self):
+        super().__init__()
+        self.view = QWidget()
+        self.setWidget(self.view)
+        self.setWidgetResizable(True)
+        self.setObjectName("settings_page")
+        self.view.setStyleSheet("background-color: transparent;")
+        self.setStyleSheet("background-color: transparent; border: none;")
+
+        self.v_layout = QVBoxLayout(self.view)
+        self.v_layout.setContentsMargins(30, 30, 30, 30)
+        self.v_layout.setSpacing(20)
+
+        self.v_layout.addWidget(TitleLabel("System Configuration"))
+
+        # --- 1. BIOMETRICS (RESTORED WEIGHT) ---
+        self.bio_card = CardWidget()
+        bio_layout = QVBoxLayout(self.bio_card)
+        bio_layout.addWidget(StrongBodyLabel("User Biometrics"))
+        bio_layout.addWidget(BodyLabel("Height/Weight used for mechanics calibration."))
+
+        # Height
+        h_layout = QHBoxLayout()
+        self.height_input = DoubleSpinBox()
+        self.height_input.setRange(100, 250)
+        self.height_input.setValue(state.USER_HEIGHT_CM)
+        self.height_input.valueChanged.connect(lambda v: setattr(state, 'USER_HEIGHT_CM', v))
+        h_layout.addWidget(QLabel("Height (cm):"))
+        h_layout.addWidget(self.height_input)
+        bio_layout.addLayout(h_layout)
+
+        # Weight (FIXED: Added back)
+        w_layout = QHBoxLayout()
+        self.weight_input = DoubleSpinBox()
+        self.weight_input.setRange(40, 200)
+        self.weight_input.setValue(state.USER_WEIGHT_KG)
+        self.weight_input.valueChanged.connect(lambda v: setattr(state, 'USER_WEIGHT_KG', v))
+        w_layout.addWidget(QLabel("Weight (kg):"))
+        w_layout.addWidget(self.weight_input)
+        bio_layout.addLayout(w_layout)
+
+        self.v_layout.addWidget(self.bio_card)
+
+        # --- 2. AR GUIDANCE ---
+        self.ar_card = CardWidget()
+        ar_layout = QHBoxLayout(self.ar_card)
+        icon_widget = IconWidget(FIF.CAMERA)
+        icon_widget.setFixedSize(24, 24)
+        ar_layout.addWidget(icon_widget)
+
+        ar_text_layout = QVBoxLayout()
+        ar_text_layout.addWidget(StrongBodyLabel("Holographic Guidance"))
+        ar_text_layout.addWidget(BodyLabel("Enable projected floor target."))
+        ar_layout.addLayout(ar_text_layout)
+
+        ar_layout.addStretch(1)
+        self.ar_switch = SwitchButton()
+        self.ar_switch.setOnText("ON")
+        self.ar_switch.setOffText("OFF")
+        self.ar_switch.setChecked(state.AR_MODE)
+        self.ar_switch.checkedChanged.connect(self.toggle_ar)
+        ar_layout.addWidget(self.ar_switch)
+        self.v_layout.addWidget(self.ar_card)
+
+        # --- 3. VOICE ASSISTANT (FIXED: Added back) ---
+        self.voice_card = CardWidget()
+        voice_layout = QHBoxLayout(self.voice_card)
+
+        voice_text_layout = QVBoxLayout()
+        voice_text_layout.addWidget(StrongBodyLabel("AI Voice Assistant"))
+        voice_text_layout.addWidget(BodyLabel("Enable audio feedback during reps."))
+        voice_layout.addLayout(voice_text_layout)
+
+        voice_layout.addStretch(1)
+        self.voice_switch = SwitchButton()
+        self.voice_switch.setOnText("ON")
+        self.voice_switch.setOffText("OFF")
+        self.voice_switch.setChecked(state.VOICE_ON)
+        self.voice_switch.checkedChanged.connect(lambda v: setattr(state, 'VOICE_ON', v))
+        voice_layout.addWidget(self.voice_switch)
+        self.v_layout.addWidget(self.voice_card)
+
+        # --- 4. DEV TOOLS ---
+        self.dev_card = CardWidget()
+        dev_layout = QHBoxLayout(self.dev_card)
+        dev_layout.addWidget(StrongBodyLabel("Developer Mode"))
+        dev_layout.addStretch(1)
+        self.btn_dev = PrimaryPushButton("Open Console", self)
+        self.btn_dev.clicked.connect(self.open_dev_console)
+        dev_layout.addWidget(self.btn_dev)
+        self.v_layout.addWidget(self.dev_card)
+
+        self.v_layout.addStretch(1)
+
+    def toggle_ar(self, val):
+        state.AR_MODE = val
+        mode = "Holo-Guide" if val else "Standard"
+        if self.window():
+            InfoBar.info(title='Tracking Mode', content=f"Switched to {mode}", parent=self.window())
+
+    def open_dev_console(self):
+        self.dev_window = DeveloperToolsWindow()
+        self.dev_window.show()
 
 
-                current_spine_norm = np.linalg.norm(
-                    ((ext_norm(11) + ext_norm(12)) / 2) - ((ext_norm(23) + ext_norm(24)) / 2))
-                calib_frames_norm.append(current_spine_norm)
+class RecordsPage(ScrollArea):
+    def __init__(self):
+        super().__init__()
+        self.view = QWidget()
+        self.setWidget(self.view)
+        self.setWidgetResizable(True)
+        self.setObjectName("records_page")
+        self.view.setStyleSheet("background-color: transparent;")
+        self.setStyleSheet("background-color: transparent; border: none;")
+        self.v_layout = QVBoxLayout(self.view)
+        self.v_layout.setContentsMargins(30, 30, 30, 30)
+        self.v_layout.setSpacing(15)
+        self.title = TitleLabel("Patient History")
+        self.v_layout.addWidget(self.title)
+        self.history_layout = QVBoxLayout()
+        self.v_layout.addLayout(self.history_layout)
+        self.v_layout.addStretch(1)
 
-                # Progress Bar
-                bar_len = int(640 * (len(calib_frames_px) / 60))
-                cv2.rectangle(frame, (0, 85), (bar_len, 90), (0, 255, 0), -1)
-
-                if len(calib_frames_px) >= 60:
-                    user_spine_px = np.median(calib_frames_px)
-                    user_spine_norm = np.median(calib_frames_norm)
-                    pixels_per_meter = user_spine_px / REAL_SPINE_LENGTH_M
-                    current_state = STATE_WARMUP
-
-        # --- PHASE 2: WARMUP ---
-        elif current_state == STATE_WARMUP:
-            cv2.putText(frame, "BUFFERING AI...", (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 165, 255), 2)
-            model_input = get_uiprmd_mapping_calibrated(landmarks_2d, user_spine_norm)
-            sequence_buffer.append(model_input)
-            sequence_buffer = sequence_buffer[-81:]
-            if len(sequence_buffer) == 81:
-                current_state = STATE_SESSION
-                print("Session Started.")
-
-        # --- PHASE 3: SESSION ---
-        elif current_state == STATE_SESSION:
-            # 1. Physics
-            hip_y_px = ((landmarks_2d[23].y + landmarks_2d[24].y) / 2) * frame.shape[0]
-            if stage == "UP":
-                start_hip_y = hip_y_px
-            elif stage == "DOWN":
-                lowest_hip_y = max(lowest_hip_y, hip_y_px)
-
-            # 2. AI Input
-            model_input = get_uiprmd_mapping_calibrated(landmarks_2d, user_spine_norm)
-            sequence_buffer.append(model_input)
-            sequence_buffer = sequence_buffer[-81:]
-
-            # 3. Geometry (3D)
-            hip = landmarks_3d[23]
-            knee = landmarks_3d[25]
-            ankle = landmarks_3d[27]
-            angle = calculate_angle_3d(hip, knee, ankle)
-
-            # --- HYBRID JUDGE ---
-            current_penalty, issues = analyze_form_mechanics_3d(landmarks_3d, stage, angle)
-
-            # MEMORY: Track worst error in this rep
-            if stage == "DOWN":
-                if current_penalty > max_rep_penalty:
-                    max_rep_penalty = current_penalty
-
-            if issues:
-                current_feedback = issues[0]
+    def add_record(self, report):
+        title = f"Session: {report['date']}"
+        content = f"Reps: {report['reps']} | Score: {report['avg_score']}%"
+        card = ExpandGroupSettingCard(icon=FIF.HISTORY, title=title, content=content)
+        detail_widget = QWidget()
+        detail_layout = QVBoxLayout(detail_widget)
+        detail_layout.setContentsMargins(20, 10, 20, 10)
+        for rep in report['details']:
+            row = QHBoxLayout()
+            lbl_rep = StrongBodyLabel(f"Rep {rep['rep_num']}:")
+            lbl_issue = BodyLabel(f"{rep['issue']}")
+            lbl_score = BodyLabel(f"Score: {rep['score']}%")
+            if rep['score'] < 70:
+                lbl_issue.setStyleSheet("color: #ff4444;")
             else:
-                current_feedback = ""
+                lbl_issue.setStyleSheet("color: #00cc66;")
+            row.addWidget(lbl_rep)
+            row.addWidget(lbl_issue)
+            row.addStretch(1)
+            row.addWidget(lbl_score)
+            detail_layout.addLayout(row)
+            line = QFrame()
+            line.setFrameShape(QFrame.HLine)
+            line.setStyleSheet("color: #333;")
+            detail_layout.addWidget(line)
+        card.addGroupWidget(detail_widget)
+        self.history_layout.insertWidget(0, card)
 
-            # State Machine
-            if angle < 120 and stage == "UP":
-                stage = "DOWN"
-                lowest_hip_y = hip_y_px
-                max_rep_penalty = 0.0  # Reset for new rep
+    # =============================================================================
 
-            if angle > 160:
-                if stage == "DOWN":
-                    reps_completed += 1
 
-                    # Grade Rep
-                    final_grade = 0.0
-                    if len(rep_scores) > 2:
-                        rep_scores.sort(reverse=True)
-                        top_scores = rep_scores[:max(1, int(len(rep_scores) * 0.3))]
-                        final_grade = sum(top_scores) / len(top_scores)
+#  PART 6: MAIN APP
+# =============================================================================
 
-                    # --- SCALING: Curve the grade (1.15x) ---
-                    scaled_ai_score = min(1.0, final_grade * 1.15)
+class PhysioDashboard(FluentWindow):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Physio-Vision Enterprise")
+        self.resize(1200, 800)
+        self.worker = VisionWorker()
+        self.worker.frame_processed.connect(self.update_video)
+        self.worker.stats_update.connect(self.update_metrics)
+        self.worker.system_status.connect(self.update_status)
+        self.worker.session_finished.connect(self.on_session_finish)
+        self.home_interface = self.create_home_interface()
+        self.home_interface.setObjectName("home_interface")
+        self.records_interface = RecordsPage()
+        self.settings_interface = SettingsPage()
+        self.init_navigation()
 
-                    # Apply penalty to SCALED score
-                    final_score = max(0.0, scaled_ai_score - max_rep_penalty)
-                    session_report.append(final_score)
+    def init_navigation(self):
+        self.addSubInterface(self.home_interface, FIF.VIDEO, "Live Analysis")
+        self.addSubInterface(self.records_interface, FIF.HEART, "Patient Records")
+        self.addSubInterface(self.settings_interface, FIF.SETTING, "Settings", NavigationItemPosition.BOTTOM)
 
-                    # Calc Work
-                    travel_m = (lowest_hip_y - start_hip_y) / pixels_per_meter
-                    work_joules = USER_WEIGHT_KG * 9.8 * travel_m
-                    physics_report.append((travel_m, work_joules))
+    def create_home_interface(self):
+        widget = QWidget()
+        layout = QHBoxLayout(widget)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(20)
+        video_card = CardWidget()
+        v_layout = QVBoxLayout(video_card)
+        header_layout = QHBoxLayout()
+        self.lbl_status = StrongBodyLabel("SYSTEM OFFLINE")
+        self.lbl_status.setStyleSheet("color: #666;")
+        self.btn_guide = ToolButton(FIF.HELP, self)
+        self.btn_guide.setToolTip("Watch Reference Video")
+        self.btn_guide.clicked.connect(self.open_guide)
+        header_layout.addWidget(self.lbl_status)
+        header_layout.addStretch(1)
+        header_layout.addWidget(self.btn_guide)
+        v_layout.addLayout(header_layout)
+        self.video_label = QLabel()
+        self.video_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.video_label.setAlignment(Qt.AlignCenter)
+        self.video_label.setStyleSheet("background-color: black; border-radius: 8px;")
+        v_layout.addWidget(self.video_label)
 
-                    print(
-                        f"Rep {reps_completed}: AI {int(final_grade * 100)}% -> Scaled {int(scaled_ai_score * 100)}% - Pen {int(max_rep_penalty * 100)}% = FINAL {int(final_score * 100)}%")
+        stats_card = CardWidget()
+        stats_card.setFixedWidth(360)
+        s_layout = QVBoxLayout(stats_card)
+        s_layout.setSpacing(25)
+        s_layout.addWidget(TitleLabel("Session Metrics"))
+        s_layout.addWidget(BodyLabel("TOTAL REPS"))
+        self.rep_val = TitleLabel("0")
+        self.rep_val.setStyleSheet("font-size: 48px; color: #0099ff;")
+        s_layout.addWidget(self.rep_val)
+        s_layout.addWidget(BodyLabel("FORM QUALITY"))
+        self.score_val = StrongBodyLabel("--")
+        self.score_bar = ProgressBar()
+        self.score_bar.setRange(0, 100)
+        self.score_bar.setValue(0)
+        s_layout.addWidget(self.score_val)
+        s_layout.addWidget(self.score_bar)
+        s_layout.addWidget(BodyLabel("AI FEEDBACK"))
+        self.feedback_lbl = StrongBodyLabel("Waiting for start...")
+        self.feedback_lbl.setStyleSheet("color: #999;")
+        s_layout.addWidget(self.feedback_lbl)
+        s_layout.addStretch(1)
+        self.btn_action = PrimaryPushButton("INITIATE SYSTEM", self)
+        self.btn_action.clicked.connect(self.toggle_session)
+        self.btn_action.setMinimumHeight(50)
+        s_layout.addWidget(self.btn_action)
+        layout.addWidget(video_card, stretch=3)
+        layout.addWidget(stats_card, stretch=1)
+        return widget
 
-                    # Placeholder for Firebase Upload
-                    # upload_session_to_cloud(...)
+    def open_guide(self):
+        if not os.path.exists(state.GUIDE_PATH):
+            InfoBar.warning(title="Error", content="Guide video file not found!", parent=self)
+            return
+        self.guide_window = ReferenceWindow(state.GUIDE_PATH)
+        self.guide_window.show()
 
-                    rep_scores = []
-                    max_rep_penalty = 0.0
+    @Slot(QImage)
+    def update_video(self, img):
+        pix = QPixmap.fromImage(img).scaled(self.video_label.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        self.video_label.setPixmap(pix)
 
-                    if reps_completed >= target_reps: print("Done! Press Q.")
+    @Slot(dict)
+    def update_metrics(self, data):
+        self.rep_val.setText(str(data['reps']))
+        self.score_val.setText(f"{data['score']}%")
+        self.score_bar.setValue(data['score'])
+        self.feedback_lbl.setText(data['feedback'])
+        if data['score'] > 85:
+            color = "#00cc66"
+        elif data['score'] > 60:
+            color = "#ffaa00"
+        else:
+            color = "#ff4444"
+        self.score_bar.setStyleSheet(f"QProgressBar::chunk {{ background-color: {color}; }}")
 
-                stage = "UP"
+    @Slot(str, str)
+    def update_status(self, text, color):
+        self.lbl_status.setText(text)
+        self.lbl_status.setStyleSheet(
+            f"color: white; background-color: {color}; font-weight: bold; padding: 8px; border-radius: 4px;")
 
-            # UI Updates
-            cv2.putText(frame, f"REPS: {reps_completed}/{target_reps}", (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 1,
-                        (255, 255, 255), 2)
-            if current_feedback:
-                cv2.putText(frame, f"WARN: {current_feedback}", (10, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+    @Slot(dict)
+    def on_session_finish(self, report):
+        self.records_interface.add_record(report)
+        InfoBar.success(title='Session Saved', content="Patient records have been updated.", orient=Qt.Horizontal,
+                        isClosable=True, position=InfoBarPosition.TOP_RIGHT, parent=self)
 
-            # AI Inference
-            if model and angle < 150 and len(sequence_buffer) == 81:
-                input_tensor = np.expand_dims(sequence_buffer, axis=0)
-                pred = model.predict(input_tensor, verbose=0)[0][0]
+    def toggle_session(self):
+        if self.worker.isRunning():
+            self.worker.stop()
+            self.btn_action.setText("INITIATE SYSTEM")
+            self.update_status("SYSTEM OFFLINE", "#333")
+        else:
+            self.worker.start()
+            self.btn_action.setText("TERMINATE SESSION")
 
-                # Curve live bar
-                curved_pred = min(1.0, pred * 1.15)
-                display_score = max(0, curved_pred - current_penalty)
+    def closeEvent(self, event):
+        self.worker.stop()
+        event.accept()
 
-                rep_scores.append(pred)
 
-                bar_width = int(display_score * 150)
-                color = (0, 255, 0) if display_score > 0.8 else (0, 0, 255)
-                cv2.rectangle(frame, (480, 20), (480 + bar_width, 50), color, -1)
-                cv2.putText(frame, f"FORM: {int(display_score * 100)}%", (480, 75), cv2.FONT_HERSHEY_SIMPLEX, 0.6,
-                            (255, 255, 255), 1)
-
-        mp_drawing.draw_landmarks(frame, results.pose_landmarks, mp_pose.POSE_CONNECTIONS)
-
-    cv2.imshow('Physio-Vision Hybrid 3D', frame)
-    if cv2.waitKey(10) & 0xFF == ord('q'): break
-
-cap.release()
-cv2.destroyAllWindows()
-
-# --- REPORT ---
-print("\n" + "=" * 45)
-print(f"   PHYSIO-VISION REPORT (User: {int(USER_HEIGHT_CM)}cm/{int(USER_WEIGHT_KG)}kg)   ")
-print("=" * 45)
-for i, (depth, work) in enumerate(physics_report):
-    grade = session_report[i] if i < len(session_report) else 0.0
-    status = "EXCELLENT" if grade > 0.9 else "GOOD" if grade > 0.7 else "IMPROVE"
-    print(f"Rep {i + 1}: {int(grade * 100)}/100 [{status}]")
-    print(f"  > Depth: {int(depth * 100)}cm | Energy: {int(work)}J")
-print("=" * 45)
+if __name__ == '__main__':
+    app = QApplication(sys.argv)
+    setTheme(Theme.DARK)
+    w = PhysioDashboard()
+    w.show()
+    sys.exit(app.exec())
