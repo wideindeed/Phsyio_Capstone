@@ -195,12 +195,13 @@ class HubPage(QWidget):
 
     EXERCISES = [
         ("squat",        "Deep Squat",        "Knee & hip mobility analysis",  "🦵", "available"),
-        ("sts", "Sit to Stand", "Geriatric fall-risk assessment", "🪑", "available"),
-        ("shoulder",     "Shoulder Press",    "Upper limb biomechanics",        "💪", "coming_soon"),
-        ("pushup",  "Pushup",       "Upper body & core stability",  "𓀒", "available"),
-        ("balance",      "Balance Test",      "Static postural stability",      "⚖️", "coming_soon"),
-        ("hip_flex",     "Hip Flexion",       "ROM measurement & logging",      "🔄", "coming_soon"),
-        ("gait",         "Gait Analysis",     "Walking pattern & cadence",      "👣", "coming_soon"),
+        ("sts",          "Sit to Stand",      "Geriatric fall-risk assessment", "🪑", "available"),
+        ("pushup",       "Pushup",            "Upper body & core stability",   "𓀒", "available"),
+        ("curl",         "Bicep Curl",        "Arm flexion & momentum analysis","💪", "available"),
+        ("shoulder",     "Shoulder Press",    "Upper limb biomechanics",       "🏋️", "coming_soon"),
+        ("balance",      "Balance Test",      "Static postural stability",     "⚖️", "coming_soon"),
+        ("hip_flex",     "Hip Flexion",       "ROM measurement & logging",     "🔄", "coming_soon"),
+        ("gait",         "Gait Analysis",     "Walking pattern & cadence",     "👣", "coming_soon"),
     ]
 
     def __init__(self, username: str, parent=None):
@@ -438,8 +439,9 @@ class AnalysisPage(QWidget):
     def _exercise_label(self) -> str:
         return {
             "squat":    "Deep Squat Analysis",
-            "sts": "Sit-to-Stand Analysis",
+            "sts":      "Sit-to-Stand Analysis",
             "pushup":   "Pushup Analysis",
+            "curl":     "Bicep Curl Analysis",
             "lunge":    "Lunge Analysis",
             "shoulder": "Shoulder Press Analysis",
         }.get(self.exercise_key, "Exercise Analysis")

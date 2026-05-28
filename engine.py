@@ -51,6 +51,8 @@ class AppState:
     PARAM_PUSHUP_HIP_DEV_METERS: float = 0.12 # Max hip deviation from body line before warning
     PARAM_PUSHUP_HIP_DEV_RATIO: float = 0.20  # Max relative hip deviation vs body length
     PARAM_HEAD_ANGLE: float = 65.0            # Max head-to-torso angle before "Head Down" warning
+    PARAM_CURL_DOWN_ANGLE: float = 150.0  # Arm fully extended
+    PARAM_CURL_UP_ANGLE: float = 75.0  # Arm fully curled
 
     # --- Session History (in-memory, not persisted) ---
     HISTORY: list = []
@@ -361,6 +363,26 @@ except:
     STS_MODEL = None
     print("WARNING: sit_to_stand_robust.keras not found.")
 
+try:
+    import os
+    import tensorflow as tf  # <--- Bringing in the modern library!
+
+    # Force Python to look in the exact directory where this running script lives
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    target_model_path = os.path.join(current_dir, "bicep_curl_robust.keras")
+
+    if os.path.exists(target_model_path):
+        # Using tf.keras instead of the old standalone keras
+        CURL_MODEL = tf.keras.models.load_model(target_model_path)
+        print("[Physio-Vision] SUCCESS: Bicep Curl AI Model Loaded via Absolute Path.")
+    else:
+        CURL_MODEL = None
+        print(f"[Physio-Vision] WARNING: Model file not found at {target_model_path}")
+
+except Exception as e:
+    CURL_MODEL = None
+    print(f"[Physio-Vision] ERROR loading Bicep Curl model: {e}")
+
 
 # --- 2. NORMALIZATION FUNCTIONS ---
 def normalize_skeleton_squat_live(frames_list):
@@ -396,6 +418,53 @@ def normalize_skeleton_pushup_live(frames_list):
     data = data / np.maximum(shoulder_width, 0.0001)
     return data.reshape(1, 60, 66)
 
+def normalize_skeleton_curl_live(frames_list):
+    """
+    Zero-centers the skeleton at the hips and scales by torso length.
+
+    Matches the exact preprocessing pipeline used during LSTM training:
+      - cv2.resize interpolates the variable-length sequence to exactly 40 frames
+      - Hip centering: subtracts the mid-hip position so hips sit at the origin
+      - Torso scaling: divides by the hip-to-shoulder-midpoint distance
+    """
+    import numpy as np
+    import cv2
+
+    # (N_frames, 99) → interpolate time axis to exactly 40 frames, keep 99 features
+    raw = np.array(frames_list, dtype=np.float32)
+    warped = cv2.resize(raw, (99, 40), interpolation=cv2.INTER_LINEAR)  # → (40, 99)
+
+    # Reshape to (Frames, 33 joints, 3 axes)
+    data = warped.reshape(-1, 33, 3)  # → (40, 33, 3)
+
+    # ── Step 1: Center at hips ──
+    mid_hip = (data[:, 23:24, :] + data[:, 24:25, :]) / 2.0  # (40, 1, 3)
+    data = data - mid_hip                                      # hip is now at origin
+
+    # ── Step 2: Scale by torso length ──
+    # mid_sh is computed AFTER centering, so the hip origin is [0,0,0].
+    # Torso length = distance from origin to shoulder midpoint = norm(mid_sh).
+    # DO NOT subtract mid_hip again here — it is no longer the hip position.
+    mid_sh = (data[:, 11:12, :] + data[:, 12:13, :]) / 2.0   # (40, 1, 3)
+    torso_length = np.linalg.norm(mid_sh, axis=2, keepdims=True)  # ← FIXED (was: mid_sh - mid_hip)
+    data = data / np.maximum(torso_length, 0.0001)
+
+    return data.reshape(1, 40, 99)
+
+def apply_mirror_matrix(landmarks):
+    """Swaps left/right body parts and inverts X to undo the webcam mirror effect."""
+    swap_map = {
+        11: 12, 12: 11, 13: 14, 14: 13, 15: 16, 16: 15,
+        23: 24, 24: 23, 25: 26, 26: 25, 27: 28, 28: 27,
+        29: 30, 30: 29, 31: 32, 32: 31,
+        1: 4, 4: 1, 2: 5, 5: 2, 3: 6, 6: 3, 7: 8, 8: 7
+    }
+    mirrored = []
+    for i in range(33):
+        target_idx = swap_map.get(i, i)
+        lm = landmarks[target_idx]
+        mirrored.extend([-lm.x, lm.y, lm.z])
+    return mirrored
 
 # =============================================================================
 #  PART 4: VISION WORKER THREAD
@@ -633,6 +702,137 @@ class VisionWorker(QThread):
                     self.system_status.emit("RESETTING...", "#ffaa00")
 
                 return  # Don't fall through to squat/STS logic
+
+            if self.exercise_mode == "curl":
+                # Compare Z-depth of shoulders to see how the MIRRORED UI sees you
+                right_shoulder_z = landmarks_3d[12].z
+                left_shoulder_z = landmarks_3d[11].z
+                
+                # Scenario A: You physically face RIGHT (Mirrored screen shows facing LEFT)
+                # This ironically perfectly matches the Kaggle dataset layout! No fix needed.
+                facing_right = left_shoulder_z < right_shoulder_z
+                
+                if right_shoulder_z < left_shoulder_z:
+                    active_sh, active_elb, active_wr = landmarks_3d[12], landmarks_3d[14], landmarks_3d[16]
+                    needs_matrix_fix = False
+                # Scenario B: You physically face LEFT (Mirrored screen shows facing RIGHT)
+                # This is inverted from Kaggle. We MUST apply the mirror matrix.
+                else:
+                    active_sh, active_elb, active_wr = landmarks_3d[11], landmarks_3d[13], landmarks_3d[15]
+                    needs_matrix_fix = True
+                    
+                elbow_angle = calculate_angle_3d(active_sh, active_elb, active_wr)
+                
+                is_extended = elbow_angle > state.PARAM_CURL_DOWN_ANGLE
+                is_curled = elbow_angle < state.PARAM_CURL_UP_ANGLE
+
+                if self.sts_stage == "WAITING":
+                    if is_extended:
+                        self.sts_stage = "HOLDING"
+                        self.sts_timer = time.time()
+                        self.system_status.emit("HOLD ARM STRAIGHT...", "#ffaa00")
+                
+                elif self.sts_stage == "HOLDING":
+                    if not is_extended:
+                        self.sts_stage = "WAITING"
+                        self.system_status.emit("EXTEND ARM DOWN", "#ffaa00")
+                    elif time.time() - self.sts_timer > 0.6: 
+                        self.sts_stage = "RECORDING"
+                        self.sts_buffer = []
+                        self.hit_top = False
+                        self.system_status.emit("● RECORDING (CURL UP)", "#ff4444")
+                        speak_async("Begin.")
+
+                elif self.sts_stage == "RECORDING":
+                    # ── Coordinate Extraction with Flip Compensation ──
+                    #
+                    # cv2.flip(frame, 1) is applied to the frame BEFORE MediaPipe processes it.
+                    # This horizontally mirrors the image, which causes MediaPipe to output
+                    # world-coordinate X-values with an INVERTED sign relative to training data.
+                    #
+                    # Training data was recorded raw (no flip), user facing LEFT, right arm in
+                    # foreground. To feed the LSTM correctly we must restore the original X sign:
+                    #
+                    #   facing_right=True  → mirror_skeleton() swaps L/R joints AND negates X.
+                    #                         The double-negation (flip inverted X, mirror restores it)
+                    #                         plus the joint swap correctly simulates the training pose.
+                    #
+                    #   facing_right=False → User faces left (matches training orientation).
+                    #                         We only need to negate X to undo the flip.
+                    #                         No joint swap needed — the right arm is already foreground.
+                    #
+                    if facing_right:
+                        frame_data = apply_mirror_matrix(landmarks_3d)   # swap L/R + negate X
+                    else:
+                        frame_data = []
+                        for lm in landmarks_3d:
+                            frame_data.extend([-lm.x, lm.y, lm.z])  # ← FIXED: negate X to undo cv2.flip
+
+                    self.sts_buffer.append(frame_data)
+
+                    if is_curled:
+                        self.hit_top = True
+
+                    if getattr(self, 'hit_top', False) and is_extended:
+                        self.sts_stage = "INFERENCE"
+                        self.system_status.emit("ANALYZING AI...", "#0099ff")
+
+                    if len(self.sts_buffer) > 200:
+                        self.sts_stage = "WAITING"
+                        self.system_status.emit("TIMEOUT. RESETTING.", "#ffaa00")
+
+                elif self.sts_stage == "INFERENCE":
+                    try:
+                        if CURL_MODEL:
+                            model_input = normalize_skeleton_curl_live(self.sts_buffer)
+                            prediction = CURL_MODEL.predict(model_input, verbose=0)[0]
+                            
+                            class_idx = np.argmax(prediction)
+                            confidence = prediction[class_idx]
+                            
+                            # Heave bias dampener
+                            if class_idx == 2 and confidence < 0.85:
+                                class_idx = 3 
+                                confidence = 0.80
+                            
+                            feedback_map = {
+                                0: "Drag Cheat (Elbow Shift)",
+                                1: "Half Rep (Incomplete ROM)",
+                                2: "Heave Cheat (Back Momentum)",
+                                3: "Excellent Form",
+                                4: "Swing Cheat (Shoulder Leverage)"
+                            }
+                            feedback = feedback_map.get(class_idx, "Unknown Pattern")
+                            
+                            # Fixed the 10% math lock
+                            if class_idx == 3:
+                                score = int(confidence * 100)
+                            else:
+                                score = int((1.0 - confidence) * 60) + 40 # Maps to a 40-100 range instead of 10
+                        else:
+                            feedback = "Excellent Form"
+                            score = 90
+                            if not getattr(self, 'hit_top', False):
+                                feedback = "Half Rep (Incomplete ROM)"
+                                score = 55
+
+                        self.reps += 1
+                        score = max(0, min(100, score))
+
+                        log_entry = {"rep_num": self.reps, "score": score, "issue": feedback}
+                        self.session_log.append(log_entry)
+                        self.stats_update.emit({"reps": self.reps, "score": score, "feedback": feedback})
+
+                        speak_text = f"Rep {self.reps}."
+                        if feedback != "Excellent Form":
+                            speak_text += f" {feedback}."
+                        speak_async(speak_text)
+                    except Exception as e:
+                        print(f"Curl AI Inference Error: {e}")
+
+                    self.sts_stage = "WAITING"
+                    self.system_status.emit("RESETTING...", "#ffaa00")
+                return
 
             # Simple heuristic triggers
             is_standing = knee_angle > 150
