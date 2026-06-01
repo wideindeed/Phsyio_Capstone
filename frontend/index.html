@@ -11,6 +11,7 @@
     It MUST be loaded before app.js.
   -->
   <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
 
@@ -46,6 +47,9 @@
       </button>
       <button class="nav-item" data-page="records">
         <span class="nav-icon">🫀</span> Patient Records
+      </button>
+      <button class="nav-item" data-page="analytics">
+        <span class="nav-icon">📈</span> Analytics
       </button>
     </div>
 
@@ -258,6 +262,71 @@
 
     </div>
     <!-- /page-records -->
+
+
+    <!-- ─── PAGE: ANALYTICS ───────────────────────────────────── -->
+    <div class="page" id="page-analytics">
+
+      <div class="page-header">
+        <div>
+          <div class="page-title">Analytics &amp; Progress</div>
+          <div class="page-subtitle">Form score trajectory across all recorded sessions.</div>
+        </div>
+      </div>
+
+      <!-- Summary KPI row -->
+      <div class="analytics-kpi-row">
+        <div class="analytics-kpi-card">
+          <div class="kpi-label">Best Score</div>
+          <div class="kpi-value text-success" id="an-best">—</div>
+          <div class="kpi-sub">All exercises</div>
+        </div>
+        <div class="analytics-kpi-card">
+          <div class="kpi-label">Latest Score</div>
+          <div class="kpi-value" id="an-latest">—</div>
+          <div class="kpi-sub">Most recent session</div>
+        </div>
+        <div class="analytics-kpi-card">
+          <div class="kpi-label">Sessions Trend</div>
+          <div class="kpi-value" id="an-trend">—</div>
+          <div class="kpi-sub">Last 5 vs previous 5</div>
+        </div>
+        <div class="analytics-kpi-card">
+          <div class="kpi-label">Consistency</div>
+          <div class="kpi-value" id="an-consistency">—</div>
+          <div class="kpi-sub">Sessions this month</div>
+        </div>
+      </div>
+
+      <!-- Main timeline chart card -->
+      <div class="analytics-chart-card">
+        <div class="analytics-chart-header">
+          <div>
+            <div class="analytics-chart-title">Form Score Timeline</div>
+            <div class="analytics-chart-sub">Chronological score per session · scale 0–100</div>
+          </div>
+          <!-- Exercise filter pills -->
+          <div class="analytics-filter-row" id="analytics-filters">
+            <button class="filter-pill active" data-filter="all">All</button>
+            <button class="filter-pill" data-filter="squat">🦵 Squat</button>
+            <button class="filter-pill" data-filter="sts">🪑 Sit–Stand</button>
+            <button class="filter-pill" data-filter="pushup">💪 Push-up</button>
+            <button class="filter-pill" data-filter="curl">🏋️ Curl</button>
+          </div>
+        </div>
+        <!-- Canvas wrapper enforces max-height so Chart.js never explodes vertically -->
+        <div class="analytics-canvas-wrap">
+          <canvas id="progressChart"></canvas>
+        </div>
+      </div>
+
+      <!-- Per-exercise breakdown row -->
+      <div class="analytics-breakdown-grid" id="analytics-breakdown">
+        <!-- Populated by JS -->
+      </div>
+
+    </div>
+    <!-- /page-analytics -->
 
 
     <!-- ─── PAGE: SETTINGS ─────────────────────────────────────── -->

@@ -40,6 +40,14 @@ const ui = {
   lastReport: null,         // holds report dict while pain dialog is open
 };
 
+// Tracks the live Chart.js instance so we can destroy it cleanly before
+// re-rendering (prevents canvas memory leaks and stale-data ghosting).
+let progressChartInstance = null;
+
+// Cache of the last received records array so filter pills can re-render
+// without needing another round-trip to Python.
+let _cachedRecords = [];
+
 // ---------------------------------------------------------------------------
 // Exercise catalogue
 // ---------------------------------------------------------------------------
@@ -238,12 +246,217 @@ function onSessionFinished(jsonStr) {
 
 function onHistoryLoaded(jsonStr) {
   const records = JSON.parse(jsonStr);
+  _cachedRecords = records;
   populateRecords(records);
   updateKpis(records);
+  renderAnalyticsChart(records, "all");
+  renderAnalyticsBreakdown(records);
+  renderAnalyticsKpis(records);
 }
 
 // ---------------------------------------------------------------------------
-// Metric helpers
+// Analytics — KPI summary row
+// ---------------------------------------------------------------------------
+function renderAnalyticsKpis(records) {
+  if (!records.length) return;
+
+  // Chronological order for trend calculation
+  const chron  = [...records].reverse();
+  const scores = chron.map(r => r.score ?? r.avg_score ?? 0);
+
+  // Best score
+  setMetric("an-best", Math.max(...scores));
+
+  // Latest score
+  setMetric("an-latest", scores[scores.length - 1] ?? "—");
+
+  // Trend: avg of last 5 vs avg of previous 5
+  const last5 = scores.slice(-5);
+  const prev5 = scores.slice(-10, -5);
+  if (last5.length && prev5.length) {
+    const avgLast = last5.reduce((a, b) => a + b, 0) / last5.length;
+    const avgPrev = prev5.reduce((a, b) => a + b, 0) / prev5.length;
+    const delta   = Math.round(avgLast - avgPrev);
+    const el = document.getElementById("an-trend");
+    if (el) {
+      el.textContent = (delta >= 0 ? "▲ +" : "▼ ") + delta;
+      el.style.color = delta >= 0 ? "var(--accent-green)" : "var(--accent-red)";
+    }
+  } else {
+    setMetric("an-trend", "—");
+  }
+
+  // Consistency: sessions recorded this calendar month
+  const now      = new Date();
+  const thisMonth = records.filter(r => {
+    if (!r.date) return false;
+    const d = new Date(r.date);
+    return !isNaN(d) && d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+  }).length;
+  setMetric("an-consistency", thisMonth);
+}
+
+// ---------------------------------------------------------------------------
+// Analytics — main Chart.js timeline
+// ---------------------------------------------------------------------------
+function renderAnalyticsChart(records, filterKey) {
+  filterKey = filterKey || "all";
+
+  // Chronological order: oldest → newest = left → right on X axis
+  const chron = [...records].reverse();
+
+  // Apply exercise filter
+  const filtered = filterKey === "all"
+    ? chron
+    : chron.filter(r => (r.exercise || "") === filterKey);
+
+  const canvas = document.getElementById("progressChart");
+  if (!canvas) return;
+
+  // Destroy stale instance to prevent canvas memory leaks / hover ghosting
+  if (progressChartInstance) {
+    progressChartInstance.destroy();
+    progressChartInstance = null;
+  }
+
+  if (!filtered.length) {
+    const ctx = canvas.getContext("2d");
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    return;
+  }
+
+  const labels = filtered.map(r => r.date || "—");
+  const scores = filtered.map(r => r.score ?? r.avg_score ?? 0);
+
+  progressChartInstance = new Chart(canvas, {
+    type: "line",
+    data: {
+      labels,
+      datasets: [{
+        label: "Form Score",
+        data: scores,
+        borderColor: "#10B981",
+        backgroundColor: "rgba(16, 185, 129, 0.05)",
+        borderWidth: 2,
+        pointRadius: 4,
+        pointBackgroundColor: "#10B981",
+        pointBorderColor: "#FFFFFF",
+        pointBorderWidth: 2,
+        pointHoverRadius: 6,
+        fill: true,
+        tension: 0.4,
+      }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,   // parent .analytics-canvas-wrap controls height
+      interaction: { mode: "index", intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: "#0F172A",
+          titleColor: "#94A3B8",
+          bodyColor: "#F8FAFC",
+          borderColor: "#1E293B",
+          borderWidth: 1,
+          padding: 10,
+          titleFont: { family: "'DM Mono', monospace", size: 11 },
+          bodyFont: { family: "'DM Mono', monospace", size: 13, weight: "500" },
+          callbacks: {
+            title: (items) => items[0]?.label || "",
+            label: (item)  => `  Score: ${item.raw}/100`,
+          },
+        },
+      },
+      scales: {
+        x: {
+          grid:   { display: false },   // hide vertical grid lines entirely
+          border: { display: false },
+          ticks: {
+            color: "#94A3B8",
+            font:  { family: "'DM Sans', sans-serif", size: 11 },
+            maxRotation: 35,
+            maxTicksLimit: 12,
+          },
+        },
+        y: {
+          beginAtZero: true,
+          max: 100,                     // hard ceiling — score is always /100
+          grid: {
+            color: "#F1F5F9",
+            drawBorder: false,
+          },
+          border: { display: false },
+          ticks: {
+            color: "#94A3B8",
+            font:  { family: "'DM Mono', monospace", size: 11 },
+            stepSize: 20,
+          },
+        },
+      },
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Analytics — per-exercise breakdown cards
+// ---------------------------------------------------------------------------
+function renderAnalyticsBreakdown(records) {
+  const container = document.getElementById("analytics-breakdown");
+  if (!container) return;
+  container.innerHTML = "";
+
+  EXERCISES.forEach(ex => {
+    const subset = records.filter(r => (r.exercise || "") === ex.key);
+    if (!subset.length) return;
+
+    const scores    = subset.map(r => r.score ?? r.avg_score ?? 0);
+    const avgScore  = Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
+    const best      = Math.max(...scores);
+    const totalReps = subset.reduce((a, r) => a + (r.reps || 0), 0);
+    const barWidth  = Math.min(100, avgScore);
+    const barColor  = avgScore >= 80 ? "var(--accent-green)"
+                    : avgScore >= 60 ? "var(--accent-amber)"
+                    :                  "var(--accent-red)";
+
+    container.insertAdjacentHTML("beforeend", `
+      <div class="breakdown-card">
+        <div class="breakdown-card-header">
+          <div class="breakdown-card-icon">${ex.icon}</div>
+          <div>
+            <div class="breakdown-card-title">${ex.title}</div>
+            <div class="breakdown-card-count">${subset.length} session${subset.length !== 1 ? "s" : ""}</div>
+          </div>
+        </div>
+        <div class="score-bar-wrap">
+          <div class="score-bar-fill" style="width:${barWidth}%;background:${barColor}"></div>
+        </div>
+        <div class="breakdown-stat-row">
+          <span class="breakdown-stat-label">Avg Score</span>
+          <span class="breakdown-stat-value">${avgScore}/100</span>
+        </div>
+        <div class="breakdown-stat-row">
+          <span class="breakdown-stat-label">Best Score</span>
+          <span class="breakdown-stat-value">${best}/100</span>
+        </div>
+        <div class="breakdown-stat-row">
+          <span class="breakdown-stat-label">Total Reps</span>
+          <span class="breakdown-stat-value">${totalReps}</span>
+        </div>
+      </div>`);
+  });
+
+  if (!container.children.length) {
+    container.innerHTML = `
+      <div class="analytics-empty" style="grid-column:1/-1">
+        <div class="empty-icon">📊</div>
+        <div class="empty-text">Complete sessions to see per-exercise breakdowns.</div>
+      </div>`;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// KPI strip (Hub)
 // ---------------------------------------------------------------------------
 function setMetric(id, value) {
   const el = document.getElementById(id);
@@ -325,13 +538,7 @@ function populateRecords(records) {
     const ex       = EXERCISES.find(e => e.key === (rec.exercise || "squat")) || EXERCISES[0];
     const scoreNum = rec.score || rec.avg_score || 0;
     const scoreClass = scoreNum >= 80 ? "high" : scoreNum >= 60 ? "mid" : "low";
-    let details = [];
-        try {
-          // If the database sent a stringified JSON array, parse it. Otherwise, use it if it's already an array.
-          details = typeof rec.details === 'string' ? JSON.parse(rec.details) : (Array.isArray(rec.details) ? rec.details : []);
-        } catch (e) {
-          console.error("Failed to parse rep details:", e);
-        }
+    const details  = Array.isArray(rec.details) ? rec.details : [];
 
     const repRows = details.length
       ? details.map(d => `
@@ -506,6 +713,15 @@ document.addEventListener("DOMContentLoaded", () => {
   // Pain dialog buttons
   document.getElementById("pain-cancel-btn")?.addEventListener("click", closePainDialog);
   document.getElementById("pain-submit-btn")?.addEventListener("click", submitPainScore);
+
+  // Analytics filter pills
+  document.querySelectorAll(".filter-pill").forEach(pill => {
+    pill.addEventListener("click", () => {
+      document.querySelectorAll(".filter-pill").forEach(p => p.classList.remove("active"));
+      pill.classList.add("active");
+      renderAnalyticsChart(_cachedRecords, pill.dataset.filter);
+    });
+  });
 
   // Start on hub
   navigate("hub");

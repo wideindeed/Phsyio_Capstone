@@ -644,3 +644,157 @@ input#pain_slider {
 .items-center { align-items: center; }
 .gap-8 { gap: 8px; }
 .flex-1 { flex: 1; }
+
+/* ── Analytics page ────────────────────────────────────────────────────────── */
+
+/* KPI summary row above the chart */
+.analytics-kpi-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.analytics-kpi-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  padding: 16px 20px;
+  display: flex; flex-direction: column; gap: 5px;
+}
+
+/* Main chart card */
+.analytics-chart-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  padding: 22px 24px;
+  margin-bottom: 20px;
+}
+
+.analytics-chart-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.analytics-chart-title {
+  font-size: 15px; font-weight: 700;
+  color: var(--text-primary); letter-spacing: -0.3px;
+}
+.analytics-chart-sub {
+  font-size: 11px; color: var(--text-muted); margin-top: 2px;
+}
+
+/* Filter pills */
+.analytics-filter-row {
+  display: flex; gap: 6px; flex-wrap: wrap; align-items: center;
+}
+
+.filter-pill {
+  display: inline-flex; align-items: center;
+  padding: 5px 12px; border-radius: 100px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 11px; font-weight: 600;
+  cursor: pointer; border: 1px solid var(--border);
+  background: var(--bg-app); color: var(--text-secondary);
+  transition: all var(--t); outline: none;
+  white-space: nowrap;
+}
+.filter-pill:hover {
+  border-color: var(--accent-green);
+  color: var(--accent-green);
+  background: #ECFDF5;
+}
+.filter-pill.active {
+  background: #ECFDF5;
+  border-color: var(--accent-green);
+  color: #065F46;
+}
+
+/*
+  Canvas wrapper: gives Chart.js a parent with a constrained height.
+  Chart.js reads the parent's height when maintainAspectRatio: false,
+  so this is the authoritative size control — do not remove.
+*/
+.analytics-canvas-wrap {
+  position: relative;
+  width: 100%;
+  max-height: 400px;
+  height: 360px;   /* explicit height required for maintainAspectRatio:false */
+}
+
+#progressChart {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+/* Empty-state placeholder inside the chart card */
+.analytics-empty {
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  height: 280px; gap: 10px;
+  color: var(--text-muted);
+}
+.analytics-empty .empty-icon { font-size: 40px; opacity: 0.35; }
+.analytics-empty .empty-text { font-size: 13px; font-weight: 500; }
+
+/* Per-exercise breakdown cards */
+.analytics-breakdown-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+}
+
+.breakdown-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+  padding: 16px 18px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+
+.breakdown-card-header {
+  display: flex; align-items: center; gap: 10px;
+}
+.breakdown-card-icon {
+  width: 36px; height: 36px;
+  background: #EFF6FF; border-radius: var(--radius-sm);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 18px; flex-shrink: 0;
+}
+.breakdown-card-title {
+  font-size: 13px; font-weight: 700; color: var(--text-primary);
+}
+.breakdown-card-count {
+  font-size: 11px; color: var(--text-muted);
+}
+
+.breakdown-stat-row {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 5px 0; border-bottom: 1px solid var(--border);
+}
+.breakdown-stat-row:last-child { border-bottom: none; }
+.breakdown-stat-label { font-size: 11px; color: var(--text-secondary); }
+.breakdown-stat-value {
+  font-family: 'DM Mono', monospace;
+  font-size: 13px; font-weight: 500; color: var(--text-primary);
+}
+
+/* Score bar (inline mini progress bar inside breakdown card) */
+.score-bar-wrap {
+  height: 4px; background: var(--border);
+  border-radius: 2px; overflow: hidden; margin-top: 4px;
+}
+.score-bar-fill {
+  height: 100%; border-radius: 2px;
+  background: var(--accent-green);
+  transition: width 600ms ease;
+}
