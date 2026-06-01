@@ -533,11 +533,13 @@ function populateRecords(records) {
     return;
   }
 
-  // Newest first
+  // Render newest-first, but preserve the original index into _cachedRecords
+  // so exportSessionToPDF() can do a stable lookup regardless of render order.
   [...records].reverse().forEach((rec, i) => {
+    // i=0 is the newest record, which lives at records[records.length-1-i]
+    const origIdx  = records.length - 1 - i;
     const ex       = EXERCISES.find(e => e.key === (rec.exercise || "squat")) || EXERCISES[0];
     const scoreNum = rec.score || rec.avg_score || 0;
-    const scoreClass = scoreNum >= 80 ? "high" : scoreNum >= 60 ? "mid" : "low";
     const details  = Array.isArray(rec.details) ? rec.details : [];
 
     const repRows = details.length
@@ -558,6 +560,10 @@ function populateRecords(records) {
             <div class="record-summary">${rec.reps || 0} reps &nbsp;·&nbsp; Pain ${rec.pain_level ?? "—"}/10</div>
           </div>
           <div class="record-score-badge ${scoreNum>=80?'text-success':scoreNum>=60?'text-warn':'text-error'}">${scoreNum}</div>
+          <button class="btn-export-pdf"
+                  onclick="event.stopPropagation(); exportSessionToPDF(${origIdx})">
+            ↓ Export PDF
+          </button>
           <span class="record-chevron">▾</span>
         </div>
         <div class="record-body">
@@ -576,6 +582,129 @@ function populateRecords(records) {
 
     container.insertAdjacentHTML("beforeend", html);
   });
+}
+
+// ---------------------------------------------------------------------------
+// PDF Export
+// ---------------------------------------------------------------------------
+function exportSessionToPDF(origIdx) {
+  // ── 1. Look up the record from the stable cache ──────────────────────────
+  const rec = _cachedRecords[origIdx];
+  if (!rec) {
+    toast("Record not found — please refresh and try again.", "error");
+    return;
+  }
+
+  const ex       = EXERCISES.find(e => e.key === (rec.exercise || "squat")) || EXERCISES[0];
+  const scoreNum = rec.score ?? rec.avg_score ?? 0;
+  const details  = Array.isArray(rec.details) ? rec.details : [];
+
+  // ── 2. Derive computed fields ─────────────────────────────────────────────
+  const scoreClass = scoreNum >= 80 ? "good" : scoreNum >= 60 ? "mid" : "low";
+  const ratingText = scoreNum >= 80 ? "Excellent"
+                   : scoreNum >= 60 ? "Acceptable"
+                   :                  "Needs Work";
+  const painLabel  = PAIN_LABELS[rec.pain_level] || String(rec.pain_level ?? "—");
+  const now        = new Date();
+  const generatedStr = now.toLocaleDateString("en-GB", {
+    day: "2-digit", month: "long", year: "numeric",
+  }) + "  " + now.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+
+  // Filename: e.g. "Physio_Report_Squat_2024-06-01.pdf"
+  const dateSlug = (rec.date || "").replace(/\s/g, "-").replace(/[^a-zA-Z0-9\-]/g, "") || "Session";
+  const filename = `Physio_Report_${ex.title.replace(/\s+/g, "_")}_${dateSlug}.pdf`;
+
+  // ── 3. Populate the hidden template ──────────────────────────────────────
+  const tmpl = document.getElementById("clinical-report-template");
+
+  // Header / meta
+  document.getElementById("cr-generated-date").textContent = generatedStr;
+  document.getElementById("cr-session-date").textContent   = rec.date || "—";
+  document.getElementById("cr-exercise-name").textContent  = ex.title;
+
+  // Patient name — read from the live sidebar element
+  const nameEl = document.querySelector(".sidebar-user .user-name");
+  document.getElementById("cr-patient-name").textContent = nameEl ? nameEl.textContent : "Patient";
+
+  // Summary cards
+  document.getElementById("cr-total-reps").textContent = rec.reps ?? "—";
+
+  const scoreEl = document.getElementById("cr-form-score");
+  scoreEl.textContent = scoreNum;
+  scoreEl.className   = `cr-summary-value cr-score-${scoreClass}`;
+
+  document.getElementById("cr-pain-level").textContent = rec.pain_level ?? "—";
+
+  const ratingEl = document.getElementById("cr-form-rating");
+  ratingEl.textContent = ratingText;
+  ratingEl.className   = `cr-summary-value cr-score-${scoreClass}`;
+
+  // Rep breakdown table body
+  const tbody = document.getElementById("cr-rep-tbody");
+  if (details.length) {
+    tbody.innerHTML = details.map(d => {
+      const s   = d.score ?? 0;
+      const cls = s >= 80 ? "good" : s >= 60 ? "mid" : "low";
+      const rat = s >= 80 ? "Excellent" : s >= 60 ? "Acceptable" : "Needs Work";
+      return `
+        <tr>
+          <td>${d.rep_num ?? "—"}</td>
+          <td class="cr-td-score-${cls}">${s}</td>
+          <td class="cr-td-rating-${cls}">${rat}</td>
+          <td>${d.issue || "Excellent Form"}</td>
+        </tr>`;
+    }).join("");
+  } else {
+    tbody.innerHTML = `
+      <tr class="cr-no-data">
+        <td colspan="4">No repetition-level data was recorded for this session.</td>
+      </tr>`;
+  }
+
+  // ── 4. Briefly make the template visible off-screen for html2pdf ──────────
+  // We move it off-screen rather than removing display:none so the browser
+  // fully lays it out (required for html2canvas to measure dimensions).
+  tmpl.style.display    = "block";
+  tmpl.style.position   = "absolute";
+  tmpl.style.left       = "-9999px";
+  tmpl.style.top        = "0";
+  tmpl.style.visibility = "hidden";
+
+  const pageEl = tmpl.querySelector(".cr-page");
+
+  // ── 5. Generate and save the PDF ─────────────────────────────────────────
+  html2pdf()
+    .set({
+      margin:   [15, 15, 15, 15],   // top, right, bottom, left in mm
+      filename: filename,
+      image:    { type: "jpeg", quality: 0.98 },
+      html2canvas: {
+        scale: 2,                   // 2× for crisp text at high DPI
+        useCORS: true,
+        backgroundColor: "#FFFFFF",
+      },
+      jsPDF: {
+        unit:        "mm",
+        format:      "a4",
+        orientation: "portrait",
+      },
+    })
+    .from(pageEl)
+    .save()
+    .then(() => {
+      // Restore the template to its hidden state
+      tmpl.style.display    = "none";
+      tmpl.style.position   = "";
+      tmpl.style.left       = "";
+      tmpl.style.top        = "";
+      tmpl.style.visibility = "";
+      toast(`PDF saved: ${filename}`, "success");
+    })
+    .catch((err) => {
+      tmpl.style.display = "none";
+      console.error("[PDF Export]", err);
+      toast("PDF export failed — see console for details.", "error");
+    });
 }
 
 function toggleAccordion(id) {
