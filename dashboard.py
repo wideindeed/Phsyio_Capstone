@@ -142,7 +142,8 @@ class ExerciseCard(QFrame):
                 border: 1px solid {CLR_ACCENT if available else CLR_DIVIDER};
             }}
         """)
-        self.setFixedHeight(140)
+        self.setMinimumHeight(140)
+        self.setMinimumWidth(220)
         _shadow(self)
 
         layout = QVBoxLayout(self)
@@ -188,30 +189,39 @@ class ExerciseCard(QFrame):
             self.clicked.emit(self.key)
 
 
-class HubPage(QWidget):
+class HubPage(ScrollArea):  # <-- CHANGED: Inherit from ScrollArea instead of QWidget
     """The main hub: welcome header, KPI strip, exercise grid."""
 
-    exercise_selected = Signal(str)   # forwards to PhysioDashboard
+    exercise_selected = Signal(str)  # forwards to PhysioDashboard
 
     EXERCISES = [
-        ("squat",        "Deep Squat",        "Knee & hip mobility analysis",  "🦵", "available"),
-        ("sts",          "Sit to Stand",      "Geriatric fall-risk assessment", "🪑", "available"),
-        ("pushup",       "Pushup",            "Upper body & core stability",   "𓀒", "available"),
-        ("curl",         "Bicep Curl",        "Arm flexion & momentum analysis","💪", "available"),
-        ("shoulder",     "Shoulder Press",    "Upper limb biomechanics",       "🏋️", "coming_soon"),
-        ("balance",      "Balance Test",      "Static postural stability",     "⚖️", "coming_soon"),
-        ("hip_flex",     "Hip Flexion",       "ROM measurement & logging",     "🔄", "coming_soon"),
-        ("gait",         "Gait Analysis",     "Walking pattern & cadence",     "👣", "coming_soon"),
+        ("squat", "Deep Squat", "Knee & hip mobility analysis", "🦵", "available"),
+        ("sts", "Sit to Stand", "Geriatric fall-risk assessment", "🪑", "available"),
+        ("shoulder", "Shoulder Press", "Upper limb biomechanics", "💪", "coming_soon"),
+        ("pushup", "Pushup", "Upper body & core stability", "𓀒", "available"),
+        ("curl", "Bicep Curl", "Arm flexion & momentum analysis", "💪", "available"),
+        ("balance", "Balance Test", "Static postural stability", "⚖️", "coming_soon"),
+        ("hip_flex", "Hip Flexion", "ROM measurement & logging", "🔄", "coming_soon"),
+        ("gait", "Gait Analysis", "Walking pattern & cadence", "👣", "coming_soon"),
     ]
 
     def __init__(self, username: str, parent=None):
         super().__init__(parent)
         self.username = username
         self.setObjectName("hub_page")
+
+        # --- NEW: Setup the scrolling view ---
+        self.view = QWidget()
+        self.setWidget(self.view)
+        self.setWidgetResizable(True)
+        self.setStyleSheet("background-color: transparent; border: none;")
+        self.view.setStyleSheet("background-color: transparent;")
+
         self._build()
 
     def _build(self):
-        root = QVBoxLayout(self)
+        # APPLY THE LAYOUT TO THE SCROLLING VIEW (self.view), NOT self!
+        root = QVBoxLayout(self.view)
         root.setContentsMargins(30, 28, 30, 28)
         root.setSpacing(24)
 
@@ -248,10 +258,10 @@ class HubPage(QWidget):
         # ── KPI strip ─────────────────────────────────────────────────
         kpi_row = QHBoxLayout()
         kpi_row.setSpacing(14)
-        self.card_sessions = MetricCard("📋", "—", "Total Sessions",   CLR_ACCENT)
-        self.card_avg_score = MetricCard("📊", "—", "Avg. Form Score",  CLR_ACCENT2)
+        self.card_sessions = MetricCard("📋", "—", "Total Sessions", CLR_ACCENT)
+        self.card_avg_score = MetricCard("📊", "—", "Avg. Form Score", CLR_ACCENT2)
         self.card_last_reps = MetricCard("🔁", "—", "Last Session Reps", CLR_WARN)
-        self.card_last_pain  = MetricCard("💊", "—", "Last Pain Score",  CLR_CRIT)
+        self.card_last_pain = MetricCard("💊", "—", "Last Pain Score", CLR_CRIT)
         for c in [self.card_sessions, self.card_avg_score, self.card_last_reps, self.card_last_pain]:
             kpi_row.addWidget(c)
         root.addLayout(kpi_row)
@@ -359,9 +369,13 @@ class AnalysisPage(QWidget):
         v_layout.addWidget(self.video_label)
         content.addWidget(video_card, stretch=3)
 
-        # --- Stats panel ---
+        # --- Stats panel (scrollable for small screens) ---
+        stats_scroll = QScrollArea()
+        stats_scroll.setFixedWidth(320)
+        stats_scroll.setWidgetResizable(True)
+        stats_scroll.setStyleSheet("background: transparent; border: none;")
+
         stats_card = QFrame()
-        stats_card.setFixedWidth(300)
         stats_card.setStyleSheet(
             f"background-color: {CLR_BG_CARD}; border-radius: {CARD_RADIUS};"
             f" border: 1px solid {CLR_DIVIDER};"
@@ -431,7 +445,8 @@ class AnalysisPage(QWidget):
         )
         s_layout.addWidget(self.btn_action)
 
-        content.addWidget(stats_card, stretch=0)
+        stats_scroll.setWidget(stats_card)
+        content.addWidget(stats_scroll, stretch=0)
         root.addLayout(content)
 
     # ── Helpers ───────────────────────────────────────────────────────
@@ -439,9 +454,8 @@ class AnalysisPage(QWidget):
     def _exercise_label(self) -> str:
         return {
             "squat":    "Deep Squat Analysis",
-            "sts":      "Sit-to-Stand Analysis",
+            "sts": "Sit-to-Stand Analysis",
             "pushup":   "Pushup Analysis",
-            "curl":     "Bicep Curl Analysis",
             "lunge":    "Lunge Analysis",
             "shoulder": "Shoulder Press Analysis",
         }.get(self.exercise_key, "Exercise Analysis")
@@ -703,7 +717,15 @@ class DeveloperToolsWindow(QWidget):
         self.setWindowFlags(Qt.WindowStaysOnTopHint | Qt.Window)
         self.setStyleSheet(f"background-color: {CLR_BG_DEEP}; color: {CLR_TEXT_PRI};")
 
-        layout = QVBoxLayout(self)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setStyleSheet("background: transparent; border: none;")
+        container = QWidget()
+        container.setStyleSheet("background: transparent;")
+        layout = QVBoxLayout(container)
         layout.setSpacing(14)
         layout.setContentsMargins(20, 20, 20, 20)
         layout.addWidget(StrongBodyLabel("Real-Time Threshold Tuning"))
@@ -732,6 +754,9 @@ class DeveloperToolsWindow(QWidget):
         note = BodyLabel("⚡ Changes apply to the next processed frame.")
         note.setStyleSheet(f"color: {CLR_TEXT_SEC}; font-size: 11px;")
         layout.addWidget(note)
+
+        scroll.setWidget(container)
+        outer.addWidget(scroll)
 
 
 # =============================================================================
@@ -836,8 +861,10 @@ class PhysioDashboard(FluentWindow):
         self.current_user = username
         self.token = token
         self.setWindowTitle(f"Physio-Vision  |  {self.current_user}")
-        self.resize(1280, 820)
-        self.setMinimumSize(1100, 700)
+
+        # --- CHANGED: Much more laptop-friendly window sizes ---
+        self.resize(1050, 720)
+        self.setMinimumSize(850, 600)
 
         # ── Background worker ──────────────────────────────────────────
         self.worker = VisionWorker()
