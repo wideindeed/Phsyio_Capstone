@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Physio-Vision</title>
+  <link rel="stylesheet" href="styles.css">
+
+  <!--
+    qwebchannel.js is served by Qt at this special URL.
+    It MUST be loaded before app.js.
+  -->
+  <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+</head>
+<body>
+
+<div id="app">
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       SIDEBAR
+  ═══════════════════════════════════════════════════════════════ -->
+  <nav id="sidebar">
+
+    <div class="sidebar-logo">
+      <div class="logo-icon">⚕</div>
+      <div>
+        <div class="logo-text">Physio-Vision</div>
+        <div class="logo-sub">Clinical AI Platform</div>
+      </div>
+    </div>
+
+    <div class="sidebar-user">
+      <div class="user-avatar">U</div>
+      <div>
+        <div class="user-name">User</div>
+        <div class="user-role">Patient</div>
+      </div>
+    </div>
+
+    <div class="sidebar-nav">
+      <button class="nav-item active" data-page="hub">
+        <span class="nav-icon">🏠</span> Hub
+      </button>
+      <button class="nav-item" data-page="analysis">
+        <span class="nav-icon">📹</span> Live Analysis
+      </button>
+      <button class="nav-item" data-page="records">
+        <span class="nav-icon">🫀</span> Patient Records
+      </button>
+    </div>
+
+    <div class="sidebar-bottom">
+      <button class="nav-item" data-page="settings">
+        <span class="nav-icon">⚙</span> Settings
+      </button>
+    </div>
+  </nav>
+
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       MAIN CONTENT
+  ═══════════════════════════════════════════════════════════════ -->
+  <div id="main">
+
+    <!-- ─── PAGE: HUB ──────────────────────────────────────────── -->
+    <div class="page active" id="page-hub">
+
+      <div class="page-header">
+        <div>
+          <div class="page-title">Good morning, <span class="user-name">User</span></div>
+          <div class="page-subtitle">Select an exercise below to begin a new session.</div>
+        </div>
+      </div>
+
+      <!-- KPI Strip -->
+      <div class="kpi-strip">
+        <div class="kpi-card">
+          <div class="kpi-label">Total Sessions</div>
+          <div class="kpi-value" id="kpi-sessions">—</div>
+          <div class="kpi-sub">All time</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Avg Score</div>
+          <div class="kpi-value" id="kpi-avg-score">—</div>
+          <div class="kpi-sub">Form quality · /100</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Total Reps</div>
+          <div class="kpi-value" id="kpi-total-reps">—</div>
+          <div class="kpi-sub">Cumulative</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Avg Pain</div>
+          <div class="kpi-value" id="kpi-avg-pain">—</div>
+          <div class="kpi-sub">Post-session /10</div>
+        </div>
+      </div>
+
+      <!-- Exercise Grid -->
+      <div style="margin-bottom:10px">
+        <div class="page-subtitle" style="font-weight:600;color:var(--text-primary)">Select Exercise</div>
+      </div>
+      <div class="exercise-grid">
+
+        <div class="exercise-card" data-key="squat">
+          <div class="exercise-icon">🦵</div>
+          <div class="exercise-title">Deep Squat</div>
+          <div class="exercise-desc">Knee & hip mobility analysis using Keras LSTM</div>
+          <span class="exercise-badge badge-ready">● Ready</span>
+        </div>
+
+        <div class="exercise-card" data-key="sts">
+          <div class="exercise-icon">🪑</div>
+          <div class="exercise-title">Sit to Stand</div>
+          <div class="exercise-desc">Geriatric fall-risk assessment via STS model</div>
+          <span class="exercise-badge badge-ready">● Ready</span>
+        </div>
+
+        <div class="exercise-card" data-key="pushup">
+          <div class="exercise-icon">💪</div>
+          <div class="exercise-title">Push-up</div>
+          <div class="exercise-desc">Upper body & core stabilisation analysis</div>
+          <span class="exercise-badge badge-ready">● Ready</span>
+        </div>
+
+        <div class="exercise-card" data-key="curl">
+          <div class="exercise-icon">🏋️</div>
+          <div class="exercise-title">Bicep Curl</div>
+          <div class="exercise-desc">Elbow ROM & cheat-pattern classification</div>
+          <span class="exercise-badge badge-ready">● Ready</span>
+        </div>
+
+      </div>
+    </div>
+    <!-- /page-hub -->
+
+
+    <!-- ─── PAGE: LIVE ANALYSIS ────────────────────────────────── -->
+    <div class="page" id="page-analysis">
+
+      <div class="page-header">
+        <div class="flex items-center gap-8">
+          <button class="btn btn-ghost btn-sm" id="back-btn">← Back</button>
+          <div>
+            <div class="page-title">
+              <span id="analysis-exercise-icon">🦵</span>
+              <span id="analysis-exercise-title" style="margin-left:8px">Exercise</span>
+            </div>
+            <div class="page-subtitle">Live MediaPipe + Keras analysis</div>
+          </div>
+        </div>
+
+        <!-- Status pill -->
+        <div class="status-pill" id="status-pill">
+          <span class="dot"></span>
+          <span class="status-text">OFFLINE</span>
+        </div>
+      </div>
+
+      <!-- Flex row: video (flex-1) + stats (fixed 320px) -->
+      <div class="analysis-body">
+
+        <!-- VIDEO PANEL -->
+        <div class="video-panel">
+          <div class="video-toolbar">
+            <span style="font-size:12px;color:var(--text-muted);font-weight:500">
+              MJPEG · 127.0.0.1:5050
+            </span>
+          </div>
+          <div class="video-wrapper">
+            <!-- Offline placeholder -->
+            <div class="video-offline-placeholder" id="video-placeholder">
+              <div class="placeholder-icon">📷</div>
+              <div style="font-size:13px;font-weight:600;color:var(--text-secondary)">Camera Offline</div>
+              <div style="font-size:12px;color:var(--text-muted)">Press Start Session to begin</div>
+            </div>
+            <!-- Live feed — never stretches, object-fit: contain -->
+            <img id="video_feed" alt="Live camera feed"
+                 style="display:none; width:100%; height:100%; object-fit:contain;">
+          </div>
+        </div>
+
+        <!-- STATS PANEL (fixed 320 px via CSS) -->
+        <div class="stats-panel">
+
+          <!-- Session control -->
+          <div class="metric-block">
+            <button class="btn btn-primary btn-full" id="session-btn">
+              ▶  Start Session
+            </button>
+          </div>
+
+          <!-- Live Score -->
+          <div class="metric-block">
+            <div class="metric-block-title">Form Score</div>
+            <div class="score-ring-wrap">
+              <div class="score-ring-value" id="score-ring-value">—</div>
+              <div class="score-ring-sub">out of 100</div>
+            </div>
+            <div class="feedback-chip" id="feedback-chip">Awaiting session…</div>
+          </div>
+
+          <!-- Rep metrics -->
+          <div class="metric-block">
+            <div class="metric-block-title">Session Metrics</div>
+            <div class="metric-row">
+              <span class="metric-row-label">Reps Completed</span>
+              <span class="metric-row-value" id="metric-reps">—</span>
+            </div>
+            <div class="metric-row">
+              <span class="metric-row-label">Last Score</span>
+              <span class="metric-row-value" id="metric-score">—</span>
+            </div>
+          </div>
+
+          <!-- Joint angles -->
+          <div class="metric-block">
+            <div class="metric-block-title">Joint Angles</div>
+            <div class="metric-row">
+              <span class="metric-row-label">Knee Angle</span>
+              <span class="metric-row-value" id="metric-knee">—</span>
+            </div>
+            <div class="metric-row">
+              <span class="metric-row-label">Trunk Lean</span>
+              <span class="metric-row-value" id="metric-trunk">—</span>
+            </div>
+            <div class="metric-row">
+              <span class="metric-row-label">Elbow Angle</span>
+              <span class="metric-row-value" id="metric-elbow">—</span>
+            </div>
+          </div>
+
+        </div>
+        <!-- /stats-panel -->
+
+      </div>
+      <!-- /analysis-body -->
+
+    </div>
+    <!-- /page-analysis -->
+
+
+    <!-- ─── PAGE: PATIENT RECORDS ──────────────────────────────── -->
+    <div class="page" id="page-records">
+
+      <div class="page-header">
+        <div>
+          <div class="page-title">Patient Records</div>
+          <div class="page-subtitle">Complete session history with rep-by-rep breakdown.</div>
+        </div>
+      </div>
+
+      <div class="records-list" id="records-list">
+        <p class="text-muted" style="text-align:center;padding:40px 0">
+          Loading history…
+        </p>
+      </div>
+
+    </div>
+    <!-- /page-records -->
+
+
+    <!-- ─── PAGE: SETTINGS ─────────────────────────────────────── -->
+    <div class="page" id="page-settings">
+
+      <div class="page-header">
+        <div>
+          <div class="page-title">Settings</div>
+          <div class="page-subtitle">All changes apply instantly to the analysis engine.</div>
+        </div>
+      </div>
+
+      <div class="settings-grid">
+
+        <!-- Biometrics -->
+        <div class="settings-section">
+          <div class="settings-section-title">Patient Biometrics</div>
+
+          <div class="setting-row">
+            <div>
+              <div class="setting-label">Height</div>
+              <div class="setting-sub">Used for body segment scaling</div>
+            </div>
+            <div class="setting-slider-wrap">
+              <input type="range" id="height-slider" min="140" max="220" step="0.5" value="174">
+              <span class="setting-slider-val" id="height-val">174.0 cm</span>
+            </div>
+          </div>
+
+          <div class="setting-row">
+            <div>
+              <div class="setting-label">Weight</div>
+              <div class="setting-sub">Used for load estimation</div>
+            </div>
+            <div class="setting-slider-wrap">
+              <input type="range" id="weight-slider" min="30" max="200" step="0.5" value="65">
+              <span class="setting-slider-val" id="weight-val">65.0 kg</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- System -->
+        <div class="settings-section">
+          <div class="settings-section-title">System</div>
+
+          <div class="setting-row">
+            <div>
+              <div class="setting-label">Voice Feedback</div>
+              <div class="setting-sub">pyttsx3 rep announcements</div>
+            </div>
+            <label class="toggle-switch">
+              <input type="checkbox" id="voice-toggle" checked>
+              <span class="toggle-track"></span>
+              <span class="toggle-thumb"></span>
+            </label>
+          </div>
+
+          <div class="setting-row">
+            <div>
+              <div class="setting-label">AR Mode</div>
+              <div class="setting-sub">Holographic floor-target overlay</div>
+            </div>
+            <label class="toggle-switch">
+              <input type="checkbox" id="ar-toggle">
+              <span class="toggle-track"></span>
+              <span class="toggle-thumb"></span>
+            </label>
+          </div>
+        </div>
+
+        <!-- Engine info (read-only) -->
+        <div class="settings-section">
+          <div class="settings-section-title">Engine Info</div>
+          <div class="setting-row">
+            <div class="setting-label">Backend</div>
+            <div style="font-family:'DM Mono',monospace;font-size:12px;color:var(--text-secondary)">
+              engine.py / VisionWorker
+            </div>
+          </div>
+          <div class="setting-row">
+            <div class="setting-label">Video Source</div>
+            <div style="font-family:'DM Mono',monospace;font-size:12px;color:var(--text-secondary)">
+              MJPEG · 127.0.0.1:5050
+            </div>
+          </div>
+          <div class="setting-row">
+            <div class="setting-label">Data Channel</div>
+            <div style="font-family:'DM Mono',monospace;font-size:12px;color:var(--text-secondary)">
+              QWebChannel (qt.webChannelTransport)
+            </div>
+          </div>
+        </div>
+
+      </div><!-- /settings-grid -->
+    </div>
+    <!-- /page-settings -->
+
+  </div><!-- /#main -->
+</div><!-- /#app -->
+
+
+<!-- ═══════════════════════════════════════════════════════════════
+     PAIN SCALE DIALOG  (wide, breathable, dynamic image)
+═══════════════════════════════════════════════════════════════ -->
+<div class="modal-overlay" id="pain-overlay">
+  <div class="pain-dialog">
+
+    <div>
+      <div class="pain-dialog-title">Post-Session Pain Assessment</div>
+      <div class="pain-dialog-sub">Rate your pain level immediately after this session. This is stored with your session data.</div>
+    </div>
+
+    <div class="pain-content">
+
+      <!-- Dynamic pain image -->
+      <div class="pain-image-wrap">
+        <img id="pain_image" src="../pain_imgs/00.PNG" alt="Pain scale reference">
+      </div>
+
+      <!-- Controls -->
+      <div class="pain-controls">
+        <div class="pain-level-display" id="pain-level-display">0</div>
+        <div class="pain-level-label" id="pain-level-label">No Pain</div>
+
+        <input type="range" id="pain_slider" min="0" max="10" step="1" value="0"
+               style="width:100%;margin-top:8px">
+
+        <div class="pain-scale-labels">
+          <span>0 — No pain</span>
+          <span>5 — Moderate</span>
+          <span>10 — Unbearable</span>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="pain-dialog-actions">
+      <button class="btn btn-ghost" id="pain-cancel-btn">Skip</button>
+      <button class="btn btn-primary" id="pain-submit-btn">Submit &amp; Save Session</button>
+    </div>
+
+  </div>
+</div>
+
+
+<!-- Toast container -->
+<div id="toast-container"></div>
+
+
+<!-- app.js must load AFTER DOM is ready -->
+<script src="app.js"></script>
+
+</body>
+</html>
