@@ -32,6 +32,9 @@ from qfluentwidgets import FluentIcon as FIF
 from auth import API_URL
 from engine import state, VisionWorker, speak_async
 
+# ── Security layer
+from client_security import get_auth_headers, clear_session, is_authenticated
+
 
 # =============================================================================
 #  STYLE CONSTANTS  (one place to change the look)
@@ -940,10 +943,9 @@ class PhysioDashboard(FluentWindow):
 
             # Cloud save
             try:
-                # 1. Attach the VIP Badge
-                headers = {"Authorization": f"Bearer {self.token}"}
+                headers = get_auth_headers()
 
-                # 2. Strict Payload (No username allowed, backend infers it from token)
+                # Strict Payload (No username allowed, backend infers it from token)
                 payload = {
                     "exercise": self.analysis_page.exercise_key,
                     "reps": report["reps"],
@@ -961,6 +963,9 @@ class PhysioDashboard(FluentWindow):
                         orient=Qt.Horizontal, isClosable=True,
                         position=InfoBarPosition.TOP_RIGHT, parent=self
                     )
+                elif resp.status_code == 401:
+                    clear_session()
+                    InfoBar.error(title="Session Expired", content="Please restart and log in again.", parent=self)
                 else:
                     InfoBar.warning(title="Sync Failed", content="Could not save to database.", parent=self)
             except requests.exceptions.RequestException:
@@ -977,13 +982,16 @@ class PhysioDashboard(FluentWindow):
     def _fetch_cloud_history(self):
         def _fetch():
             try:
-                headers = {"Authorization": f"Bearer {self.token}"}
+                headers = get_auth_headers()
 
                 resp = requests.get(f"{API_URL}/get_history", headers=headers)
 
                 if resp.status_code == 200:
                     records = resp.json().get("history", [])
                     self.history_loaded.emit(records)
+                elif resp.status_code == 401:
+                    clear_session()
+                    print("[Physio-Vision] Session expired — token rejected by server.")
             except requests.exceptions.RequestException:
                 print("[Physio-Vision] Offline mode — could not reach server.")
 

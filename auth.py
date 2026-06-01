@@ -3,6 +3,11 @@ import os
 import subprocess
 import requests
 
+# ---------------------------------------------------------------------------
+# Security layer
+# ---------------------------------------------------------------------------
+from client_security import hash_password, store_session
+
 import socket
 import webbrowser
 from urllib.parse import urlparse, parse_qs
@@ -278,7 +283,7 @@ class LoginWindow(QWidget):
 
         root.addStretch(1)
 
-        footer = QLabel("Secure connection  ·  Data encrypted in transit")
+        footer = QLabel("Passwords hashed client-side  ·  PHI encrypted at rest")
         footer.setAlignment(Qt.AlignCenter)
         footer.setStyleSheet(
             f"color: {CLR_TEXT_SEC}; font-size: 10px; background: transparent;"
@@ -366,6 +371,9 @@ class LoginWindow(QWidget):
             InfoBar.error("", "Please enter both username and password.", parent=self)
             return
 
+        # Hash the password before it leaves the machine
+        pw_hash = hash_password(pw)
+
         try:
             # 1. VIP Badge Header for Cloudflare Bypass
             headers = {
@@ -376,7 +384,7 @@ class LoginWindow(QWidget):
             # 2. Add empty cf_token to satisfy Pydantic
             payload = {
                 "username": user,
-                "password": pw,
+                "password": pw_hash,   # SHA-256 hex digest, not plaintext
                 "cf_token": ""
             }
 
@@ -384,6 +392,7 @@ class LoginWindow(QWidget):
 
             if resp.status_code == 200:
                 token = resp.json().get("access_token", "")
+                store_session(token, user)
                 self.login_successful.emit(user,token)
             else:
                 # 3. Crash Fix: Safely parse FastAPI lists into a readable string
@@ -414,6 +423,9 @@ class LoginWindow(QWidget):
             InfoBar.error("", "Passwords do not match.", parent=self)
             return
 
+        # Hash the password before it leaves the machine
+        pw_hash = hash_password(pw)
+
         try:
             # 1. VIP Badge Header
             headers = {
@@ -425,7 +437,7 @@ class LoginWindow(QWidget):
             payload = {
                 "username": user,
                 "email": email,
-                "password": pw,
+                "password": pw_hash,   # SHA-256 hex digest, not plaintext
                 "first_name": "Desktop",
                 "last_name": "User",
                 "country": "United States",
@@ -471,6 +483,9 @@ class LoginWindow(QWidget):
             # SCENARIO 1: Existing User (Login Successful)
             username = params.get("username", "User")
             token = params["access"]
+
+            # Store the JWT in the centralized session store
+            store_session(token, username)
 
             InfoBar.success("Success", f"Logged in as {username} via Google!", parent=self)
             self.login_successful.emit(username,token)
