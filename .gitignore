@@ -40,3 +40,7 @@ __pycache__/
 #server stuff
 physio.db
 __pycache__/
+
+
+# Ignore heavy CSV data tracking logs
+*.csv
