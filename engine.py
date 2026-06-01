@@ -1,6 +1,7 @@
 import cv2
 import time
 import threading
+import queue as _queue
 import numpy as np
 import pyttsx3
 import math
@@ -60,6 +61,10 @@ class AppState:
 
 # Singleton instance shared across the entire application
 state = AppState()
+
+# LLM coaching layer — gracefully disabled if groq package or API key is missing
+from llm_coach import LLMCoach, build_rep_snapshot
+llm_coach = LLMCoach()
 
 
 # =============================================================================
@@ -256,7 +261,14 @@ def analyze_form_mechanics_3d(world_landmarks, stage: str, knee_angle: float):
         penalty += 0.20
         feedback.insert(0, "BACK ROUNDING")
 
-    return penalty, feedback
+    raw_metrics = {
+        "lean_from_vertical": round(float(lean_from_vertical), 1),
+        "lean_threshold":     round(float(lean_tolerance), 1),
+        "rounding_angle":     round(float(rounding_angle), 1),
+        "rounding_threshold": round(float(state.PARAM_ROUNDING), 1),
+    }
+
+    return penalty, feedback, raw_metrics
 
 def analyze_pushup_form_3d(world_landmarks, elbow_angle: float):
     """Check pushup-specific form: hip sag, elbow flare, head drop."""
@@ -328,20 +340,40 @@ def analyze_pushup_form_3d(world_landmarks, elbow_angle: float):
 #  PART 3: AUDIO (NON-BLOCKING)
 # =============================================================================
 
-def speak_async(text: str) -> None:
-    """Fire-and-forget TTS call on a daemon thread. Silently ignored if voice is off."""
-    if not state.VOICE_ON:
-        return
+# ── Serialised TTS queue (prevents "run loop already started" crash) ──────────
+# A single dedicated daemon thread owns the pyttsx3 engine.  All speech
+# requests are funnelled through a queue so they play sequentially.
 
-    def _speak():
+_tts_queue: _queue.Queue = _queue.Queue()
+
+
+def _tts_worker() -> None:
+    """Runs on a dedicated daemon thread.  Owns the only pyttsx3 engine."""
+    engine = None
+    while True:
+        text = _tts_queue.get()
+        if text is None:
+            break
         try:
-            engine = pyttsx3.init()
+            if engine is None:
+                engine = pyttsx3.init()
             engine.say(text)
             engine.runAndWait()
         except Exception:
-            pass
+            # Engine crashed — force re-init on next request
+            engine = None
+        finally:
+            _tts_queue.task_done()
 
-    threading.Thread(target=_speak, daemon=True).start()
+
+threading.Thread(target=_tts_worker, daemon=True).start()
+
+
+def speak_async(text: str) -> None:
+    """Queue a phrase for TTS.  Returns immediately, never blocks the caller."""
+    if not state.VOICE_ON:
+        return
+    _tts_queue.put(text)
 
 
 
@@ -506,6 +538,10 @@ class VisionWorker(QThread):
         self.sts_stage = "WAITING"
         self.sts_timer = 0.0
         self.sts_buffer = []
+
+        # --- LLM COACHING TRACKERS (squat) ---
+        self.last_min_angle = 180.0
+        self.last_raw_metrics = {}
 
     # ------------------------------------------------------------------
     # Main loop
@@ -874,9 +910,14 @@ class VisionWorker(QThread):
 
                 # 2. Math Engine Diagnostics (Squat Only)
                 if self.exercise_mode == "squat":
-                    penalty, issues = analyze_form_mechanics_3d(landmarks_3d, "DOWN", knee_angle)
+                    penalty, issues, raw_metrics = analyze_form_mechanics_3d(landmarks_3d, "DOWN", knee_angle)
                     if issues and not hasattr(self, 'current_rep_issues'):
                         self.current_rep_issues = issues[0]
+
+                    # Track deepest point metrics for LLM coaching
+                    if knee_angle < self.last_min_angle:
+                        self.last_min_angle = knee_angle
+                        self.last_raw_metrics = raw_metrics
 
                     # Stop Condition: They went deep enough, and are now back to standing
                     if knee_angle < state.PARAM_SQUAT_DEPTH:
@@ -948,6 +989,24 @@ class VisionWorker(QThread):
                     if feedback != "Excellent Form":
                         speak_text += f" {feedback}."
                     speak_async(speak_text)
+
+                    # 6. LLM coaching cue (squat only, non-blocking)
+                    if self.exercise_mode == "squat" and llm_coach.enabled:
+                        snapshot = build_rep_snapshot(
+                            exercise_type="deep_squat",
+                            rep_number=self.reps,
+                            joint_angle_at_peak=self.last_min_angle,
+                            form_score_percent=score,
+                            faults_detected=[feedback] if feedback != "Excellent Form" else [],
+                            raw_metrics=self.last_raw_metrics,
+                            session_log=self.session_log,
+                            user_height_cm=state.USER_HEIGHT_CM,
+                        )
+                        llm_coach.cue_async(snapshot, callback=speak_async)
+
+                    # Reset depth tracking for next rep
+                    self.last_min_angle = 180.0
+                    self.last_raw_metrics = {}
 
                 except Exception as e:
                     print(f"AI Inference Error: {e}")
