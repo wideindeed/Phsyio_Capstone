@@ -483,109 +483,129 @@
 
 <!-- ═══════════════════════════════════════════════════════════════
      CLINICAL REPORT TEMPLATE
-     Hidden from the UI at all times. html2pdf reads this node,
-     populates it dynamically, then rasterises it off-screen.
-     All styling is self-contained inside #clinical-report-template
-     so it is completely isolated from the app's CSS variables.
+     LAYOUT NOTE: Every structural element uses <table> instead of
+     flex/grid. html2canvas (bundled in html2pdf 0.10.1) does not
+     reliably render CSS flex or grid — it collapses them into a
+     vertical stack, which is exactly the "messy list" bug seen in
+     the screenshot. <table> layout has been supported since html2canvas
+     v0.4 and renders correctly at scale:2.
+     All IDs are unchanged so exportSessionToPDF() needs no edits.
 ═══════════════════════════════════════════════════════════════ -->
 <div id="clinical-report-template" style="display:none;">
+<div class="cr-page">
 
-  <!-- ── Page wrapper: A4 width, pure white, black text ── -->
-  <div class="cr-page">
-
-    <!-- HEADER BAND -->
-    <div class="cr-header">
-      <div class="cr-header-left">
-        <div class="cr-logo-mark">⚕</div>
-        <div>
-          <div class="cr-logo-name">Physio-Vision</div>
-          <div class="cr-logo-sub">AI-Assisted Clinical Motion Analysis</div>
-        </div>
-      </div>
-      <div class="cr-header-right">
+  <!-- ══════════════════════════════════════════════════════
+       HEADER: logo left, report title right
+  ══════════════════════════════════════════════════════ -->
+  <table class="cr-layout-table" style="margin-bottom:0;">
+    <tr>
+      <!-- Logo block -->
+      <td style="vertical-align:middle; padding:0; width:60%;">
+        <table style="border:none; border-collapse:collapse;">
+          <tr>
+            <td style="vertical-align:middle; padding-right:14px; font-size:32pt; line-height:1; color:#000;">⚕</td>
+            <td style="vertical-align:middle; padding:0;">
+              <div class="cr-logo-name">Physio-Vision</div>
+              <div class="cr-logo-sub">AI-Assisted Clinical Motion Analysis</div>
+            </td>
+          </tr>
+        </table>
+      </td>
+      <!-- Report label block -->
+      <td style="vertical-align:middle; text-align:right; padding:0;">
         <div class="cr-report-label">PATIENT PROGRESS REPORT</div>
-        <div class="cr-report-meta">
-          Generated: <span id="cr-generated-date"></span>
-        </div>
-      </div>
-    </div>
+        <div class="cr-report-meta">Generated: <span id="cr-generated-date"></span></div>
+      </td>
+    </tr>
+  </table>
 
-    <!-- HORIZONTAL RULE -->
-    <div class="cr-rule"></div>
+  <!-- Rule -->
+  <div class="cr-rule"></div>
 
-    <!-- PATIENT & SESSION INFO BAND -->
-    <div class="cr-info-band">
-      <div class="cr-info-cell">
+  <!-- ══════════════════════════════════════════════════════
+       PATIENT / SESSION INFO BAND: 3 equal columns
+  ══════════════════════════════════════════════════════ -->
+  <table class="cr-layout-table cr-info-band" style="margin-bottom:24px;">
+    <tr>
+      <td class="cr-info-cell" style="width:33.33%;">
         <div class="cr-info-label">Patient</div>
         <div class="cr-info-value" id="cr-patient-name">—</div>
-      </div>
-      <div class="cr-info-cell">
+      </td>
+      <td class="cr-info-cell" style="width:33.33%; border-left:1px solid #CCCCCC;">
         <div class="cr-info-label">Session Date</div>
         <div class="cr-info-value" id="cr-session-date">—</div>
-      </div>
-      <div class="cr-info-cell">
+      </td>
+      <td class="cr-info-cell" style="width:33.33%; border-left:1px solid #CCCCCC;">
         <div class="cr-info-label">Exercise</div>
         <div class="cr-info-value" id="cr-exercise-name">—</div>
-      </div>
-    </div>
+      </td>
+    </tr>
+  </table>
 
-    <!-- SESSION SUMMARY BLOCK -->
-    <div class="cr-section-title">Session Summary</div>
-    <div class="cr-summary-grid">
-      <div class="cr-summary-card">
+  <!-- ══════════════════════════════════════════════════════
+       SESSION SUMMARY: 4-up metric blocks in a single table row
+  ══════════════════════════════════════════════════════ -->
+  <div class="cr-section-title">Session Summary</div>
+  <table class="cr-layout-table cr-summary-table" style="margin-bottom:28px;">
+    <tr>
+      <td class="cr-summary-card" style="width:25%;">
         <div class="cr-summary-label">Total Repetitions</div>
         <div class="cr-summary-value" id="cr-total-reps">—</div>
-      </div>
-      <div class="cr-summary-card">
+        <div class="cr-summary-sub">&nbsp;</div>
+      </td>
+      <td class="cr-summary-card" style="width:25%; border-left:1px solid #CCCCCC;">
         <div class="cr-summary-label">Overall Form Score</div>
         <div class="cr-summary-value" id="cr-form-score">—</div>
         <div class="cr-summary-sub">out of 100</div>
-      </div>
-      <div class="cr-summary-card">
+      </td>
+      <td class="cr-summary-card" style="width:25%; border-left:1px solid #CCCCCC;">
         <div class="cr-summary-label">Post-Session Pain</div>
         <div class="cr-summary-value" id="cr-pain-level">—</div>
         <div class="cr-summary-sub">out of 10</div>
-      </div>
-      <div class="cr-summary-card">
+      </td>
+      <td class="cr-summary-card" style="width:25%; border-left:1px solid #CCCCCC;">
         <div class="cr-summary-label">Form Rating</div>
         <div class="cr-summary-value" id="cr-form-rating">—</div>
-      </div>
-    </div>
+        <div class="cr-summary-sub">&nbsp;</div>
+      </td>
+    </tr>
+  </table>
 
-    <!-- REPETITION BREAKDOWN TABLE -->
-    <div class="cr-section-title" style="margin-top:28px;">Repetition Breakdown</div>
-    <div class="cr-table-note">
-      Biomechanical feedback is generated by the on-device Keras classification model.
-      Scores are normalised to a 0–100 scale via min-max mapping of the UI-PRMD dataset.
-    </div>
-    <table class="cr-rep-table">
-      <thead>
-        <tr>
-          <th class="cr-th cr-th-num">Rep #</th>
-          <th class="cr-th cr-th-score">Score /100</th>
-          <th class="cr-th cr-th-rating">Rating</th>
-          <th class="cr-th cr-th-feedback">Biomechanical Feedback</th>
-        </tr>
-      </thead>
-      <tbody id="cr-rep-tbody">
-        <!-- Populated by exportSessionToPDF() -->
-      </tbody>
-    </table>
+  <!-- ══════════════════════════════════════════════════════
+       REPETITION BREAKDOWN TABLE
+  ══════════════════════════════════════════════════════ -->
+  <div class="cr-section-title">Repetition Breakdown</div>
+  <div class="cr-table-note">
+    Biomechanical feedback is generated by the on-device Keras classification model.
+    Scores are normalised to a 0–100 scale via min-max mapping of the UI-PRMD dataset.
+  </div>
+  <table class="cr-rep-table">
+    <thead>
+      <tr>
+        <th class="cr-th cr-th-num">Rep #</th>
+        <th class="cr-th cr-th-score">Score /100</th>
+        <th class="cr-th cr-th-rating">Rating</th>
+        <th class="cr-th cr-th-feedback">Biomechanical Feedback</th>
+      </tr>
+    </thead>
+    <tbody id="cr-rep-tbody">
+      <!-- Populated by exportSessionToPDF() -->
+    </tbody>
+  </table>
 
-    <!-- CLINICAL FOOTER -->
-    <div class="cr-rule" style="margin-top:32px;"></div>
-    <div class="cr-footer">
-      <div class="cr-footer-disclaimer">
-        This report is generated automatically by the Physio-Vision AI platform and is
-        intended as a supplementary clinical aid only. It does not constitute a medical
-        diagnosis. All findings should be reviewed by a qualified physiotherapist or
-        physician before clinical decisions are made.
-      </div>
-      <div class="cr-footer-meta">
-        Physio-Vision · AI-Assisted Motion Analysis · Confidential Patient Record
-      </div>
-    </div>
+  <!-- Rule + footer -->
+  <div class="cr-rule" style="margin-top:32px;"></div>
+  <div class="cr-footer-disclaimer">
+    This report is generated automatically by the Physio-Vision AI platform and is
+    intended as a supplementary clinical aid only. It does not constitute a medical
+    diagnosis. All findings should be reviewed by a qualified physiotherapist or
+    physician before clinical decisions are made.
+  </div>
+  <div class="cr-footer-meta">
+    Physio-Vision · AI-Assisted Motion Analysis · Confidential Patient Record
+  </div>
 
-  </div><!-- /.cr-page -->
+</div><!-- /.cr-page -->
 </div><!-- /#clinical-report-template -->
+</body>
 </html>

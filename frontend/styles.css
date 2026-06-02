@@ -827,73 +827,62 @@ input#pain_slider {
    Font sizes use pt so html2pdf / jsPDF scale them correctly on A4.
    ═══════════════════════════════════════════════════════════════════════════ */
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   CLINICAL REPORT TEMPLATE — table-only layout, html2canvas-safe
+   No flex, no grid — html2canvas (bundled in html2pdf 0.10.1) does not
+   reliably support either. Every multi-column structure uses <table>.
+   No CSS variables, no hover, no shadows. Pure #000 on #FFF. Arial/pt.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
 #clinical-report-template {
-  /* This element is always display:none in the DOM.
-     exportSessionToPDF() briefly makes it display:block off-screen. */
   font-family: Arial, Helvetica, sans-serif;
-  font-size: 0; /* prevents inherited sizes leaking into cr-* children */
   color: #000000;
   background: #FFFFFF;
+  font-size: 0; /* block inherited sizes from app styles */
 }
 
-/* Page wrapper — A4 content width with generous margins */
+/* ── Page wrapper ── */
 #clinical-report-template .cr-page {
-  width: 794px;              /* ≈ A4 at 96 dpi, html2pdf scales to mm */
-  min-height: 1123px;        /* A4 height reference */
+  width: 794px;
+  min-height: 1123px;
   background: #FFFFFF;
   color: #000000;
   font-family: Arial, Helvetica, sans-serif;
-  font-size: 14pt;
+  font-size: 13pt;
   line-height: 1.5;
   padding: 48px 52px;
   box-sizing: border-box;
 }
 
-/* ── Header band ── */
-#clinical-report-template .cr-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: 16px;
+/* ── Full-width layout table (reused for header, info band, summary) ── */
+#clinical-report-template .cr-layout-table {
+  width: 100%;
+  border-collapse: collapse;
+  border: none;
 }
 
-#clinical-report-template .cr-header-left {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-}
-
-#clinical-report-template .cr-logo-mark {
-  font-size: 28pt;
-  line-height: 1;
-  color: #000000;
-}
-
+/* ── Logo / branding ── */
 #clinical-report-template .cr-logo-name {
-  font-size: 20pt;
+  font-size: 22pt;
   font-weight: 700;
   color: #000000;
-  letter-spacing: -0.5px;
   line-height: 1.1;
+  letter-spacing: -0.5px;
 }
 
 #clinical-report-template .cr-logo-sub {
   font-size: 9pt;
   color: #444444;
-  letter-spacing: 0.3px;
   margin-top: 2px;
 }
 
-#clinical-report-template .cr-header-right {
-  text-align: right;
-}
-
+/* ── Report title (right-aligned cell) ── */
 #clinical-report-template .cr-report-label {
   font-size: 9pt;
   font-weight: 700;
   letter-spacing: 1.5px;
-  color: #000000;
   text-transform: uppercase;
+  color: #000000;
 }
 
 #clinical-report-template .cr-report-meta {
@@ -911,20 +900,12 @@ input#pain_slider {
 
 /* ── Patient / session info band ── */
 #clinical-report-template .cr-info-band {
-  display: flex;
-  gap: 0;
-  margin-bottom: 28px;
   border: 1px solid #CCCCCC;
 }
 
 #clinical-report-template .cr-info-cell {
-  flex: 1;
   padding: 12px 16px;
-  border-right: 1px solid #CCCCCC;
-}
-
-#clinical-report-template .cr-info-cell:last-child {
-  border-right: none;
+  vertical-align: top;
 }
 
 #clinical-report-template .cr-info-label {
@@ -953,24 +934,18 @@ input#pain_slider {
   border-bottom: 1px solid #CCCCCC;
   padding-bottom: 6px;
   margin-bottom: 14px;
+  margin-top: 24px;
 }
 
-/* ── Summary grid (2×2 metric cards) ── */
-#clinical-report-template .cr-summary-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 0;
+/* ── Summary 4-up table ── */
+#clinical-report-template .cr-summary-table {
   border: 1px solid #CCCCCC;
 }
 
 #clinical-report-template .cr-summary-card {
-  padding: 16px 18px;
-  border-right: 1px solid #CCCCCC;
+  padding: 18px 20px;
   text-align: center;
-}
-
-#clinical-report-template .cr-summary-card:last-child {
-  border-right: none;
+  vertical-align: top;
 }
 
 #clinical-report-template .cr-summary-label {
@@ -979,26 +954,26 @@ input#pain_slider {
   letter-spacing: 0.5px;
   text-transform: uppercase;
   color: #555555;
-  margin-bottom: 8px;
+  margin-bottom: 10px;
 }
 
 #clinical-report-template .cr-summary-value {
-  font-size: 28pt;
+  font-size: 30pt;
   font-weight: 700;
   color: #000000;
   line-height: 1;
 }
 
-/* Colour overrides applied by JS — kept simple for print fidelity */
-#clinical-report-template .cr-score-good  { color: #166534; }  /* dark green */
-#clinical-report-template .cr-score-mid   { color: #92400E; }  /* dark amber */
-#clinical-report-template .cr-score-low   { color: #991B1B; }  /* dark red */
-
 #clinical-report-template .cr-summary-sub {
   font-size: 9pt;
   color: #666666;
-  margin-top: 4px;
+  margin-top: 5px;
 }
+
+/* Score colour classes — dark, print-safe tones */
+#clinical-report-template .cr-score-good { color: #166534; }
+#clinical-report-template .cr-score-mid  { color: #92400E; }
+#clinical-report-template .cr-score-low  { color: #991B1B; }
 
 /* ── Table note ── */
 #clinical-report-template .cr-table-note {
@@ -1013,32 +988,26 @@ input#pain_slider {
 #clinical-report-template .cr-rep-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 12pt;
 }
 
 #clinical-report-template .cr-th {
-  background: #000000;
+  background: #1A1A1A;
   color: #FFFFFF;
   font-size: 9pt;
   font-weight: 700;
   letter-spacing: 0.5px;
   text-transform: uppercase;
   text-align: left;
-  padding: 10px 12px;
-  border: 1px solid #000000;
+  padding: 10px 14px;
+  border: 1px solid #1A1A1A;
 }
 
-#clinical-report-template .cr-th-num     { width: 60px;  }
-#clinical-report-template .cr-th-score   { width: 90px;  }
-#clinical-report-template .cr-th-rating  { width: 110px; }
-#clinical-report-template .cr-th-feedback { /* remaining width */ }
-
-#clinical-report-template .cr-rep-table tbody tr:nth-child(even) td {
-  background: #F8F8F8;
-}
+#clinical-report-template .cr-th-num     { width: 55px; }
+#clinical-report-template .cr-th-score   { width: 88px; }
+#clinical-report-template .cr-th-rating  { width: 108px; }
 
 #clinical-report-template .cr-rep-table td {
-  padding: 10px 12px;
+  padding: 10px 14px;
   border: 1px solid #DDDDDD;
   color: #000000;
   font-size: 12pt;
@@ -1046,35 +1015,30 @@ input#pain_slider {
   line-height: 1.4;
 }
 
-/* Score cell colouring */
+#clinical-report-template .cr-rep-table tbody tr:nth-child(even) td {
+  background: #F7F7F7;
+}
+
 #clinical-report-template .cr-td-score-good { color: #166534; font-weight: 700; }
 #clinical-report-template .cr-td-score-mid  { color: #92400E; font-weight: 700; }
 #clinical-report-template .cr-td-score-low  { color: #991B1B; font-weight: 700; }
 
-/* Rating badge (text only, no background) */
 #clinical-report-template .cr-td-rating-good { color: #166534; font-weight: 700; }
 #clinical-report-template .cr-td-rating-mid  { color: #92400E; font-weight: 700; }
 #clinical-report-template .cr-td-rating-low  { color: #991B1B; font-weight: 700; }
 
-/* No-data fallback row */
 #clinical-report-template .cr-no-data td {
   color: #888888;
   font-style: italic;
 }
 
 /* ── Footer ── */
-#clinical-report-template .cr-footer {
-  margin-top: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
 #clinical-report-template .cr-footer-disclaimer {
   font-size: 8pt;
   color: #555555;
   line-height: 1.5;
   font-style: italic;
+  margin-bottom: 6px;
 }
 
 #clinical-report-template .cr-footer-meta {

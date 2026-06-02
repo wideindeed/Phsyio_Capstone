@@ -52,7 +52,7 @@ from PyQt5.QtCore import (Qt, QTimer, pyqtSignal as Signal,
                            pyqtSlot as Slot, QObject, QUrl,
                            QMetaObject, Q_ARG)
 from PyQt5.QtGui import QImage
-from PyQt5.QtWidgets import QApplication, QMainWindow
+from PyQt5.QtWidgets import QApplication, QMainWindow, QFileDialog
 from PyQt5.QtWebEngineWidgets import (QWebEngineView, QWebEngineProfile,
                                       QWebEngineSettings)
 from PyQt5.QtWebChannel import QWebChannel
@@ -317,6 +317,30 @@ class PhysioDashboard(QMainWindow):
         settings.setAttribute(QWebEngineSettings.LocalContentCanAccessFileUrls,   True)
         settings.setAttribute(QWebEngineSettings.JavascriptEnabled,               True)
         settings.setAttribute(QWebEngineSettings.AllowRunningInsecureContent,     True)
+
+        # ── Setup PDF Download Handler ──────────────────────────────────────
+        def handle_download(download_item):
+            # 1. Catch the filename Javascript is trying to save (Physio_Report.pdf)
+            suggested_name = download_item.suggestedFileName()
+            
+            # 2. Force open the Windows "Save As" dialog
+            save_path, _ = QFileDialog.getSaveFileName(
+                self,                     # Attaches the dialog to your main window
+                "Save Medical Report",    # Window title
+                suggested_name,           # Default file name
+                "PDF Files (*.pdf)"       # File filter
+            )
+            
+            # 3. If the user picks a folder and clicks Save, write the file!
+            if save_path:
+                download_item.setPath(save_path)
+                download_item.accept()
+            else:
+                download_item.cancel() # If they hit cancel, dump the file
+
+        # 4. Connect Chromium's download signal to our new function
+        self._view.page().profile().downloadRequested.connect(handle_download)
+        # ───────────────────────────────────────────────────────────────
 
         # ── QWebChannel ────────────────────────────────────────────────────
         self.worker = VisionWorker()
