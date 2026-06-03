@@ -568,6 +568,8 @@ class VisionWorker(QThread):
 
         self.cap.release()
 
+
+
         # Build and emit the final session report
         report = {
             "date": self.start_time.strftime("%Y-%m-%d %H:%M") if self.start_time else "Unknown",
@@ -957,7 +959,7 @@ class VisionWorker(QThread):
 
     def stop(self) -> None:
         self.running = False
-        self.wait()
+
 
     def _calculate_avg_score(self) -> int:
         if not self.session_log:

@@ -531,8 +531,11 @@ input[type=range]:hover::-webkit-slider-thumb { transform: scale(1.2); }
 /* ── Pain Scale Dialog ─────────────────────────────────────────────────────── */
 .modal-overlay {
   position: fixed; inset: 0;
-  background: rgba(15, 23, 42, 0.5);
-  backdrop-filter: blur(4px);
+  /* Darken the background to 0.90 to make up for the lost blur */
+  background: rgba(15, 23, 42, 0.90);
+
+  /* DELETE the backdrop-filter line entirely! */
+
   display: none; align-items: center; justify-content: center;
   z-index: 1000;
 }

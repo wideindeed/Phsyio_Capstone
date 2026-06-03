@@ -52,7 +52,7 @@ from PyQt5.QtCore import (Qt, QTimer, pyqtSignal as Signal,
                            pyqtSlot as Slot, QObject, QUrl,
                            QMetaObject, Q_ARG)
 from PyQt5.QtGui import QImage
-from PyQt5.QtWidgets import QApplication, QMainWindow, QFileDialog
+from PyQt5.QtWidgets import QApplication, QMainWindow
 from PyQt5.QtWebEngineWidgets import (QWebEngineView, QWebEngineProfile,
                                       QWebEngineSettings)
 from PyQt5.QtWebChannel import QWebChannel
@@ -248,27 +248,30 @@ class Bridge(QObject):
     def submit_pain_score(self, pain_str: str, exercise: str,
                           reps: int, avg_score: int, details_json: str):
         try:
-            pain    = int(pain_str)
-            token   = self._token          # capture before thread starts
+            pain = int(pain_str)
+            token = self._token
+
             def _post():
                 try:
-                    headers = {"Authorization": f"Bearer {token}"}
-                    payload = {
-                        "exercise":   exercise,
-                        "reps":       reps,
-                        "score":      avg_score,
-                        "pain_level": pain,
+                    headers = {
+                        "Authorization": f"Bearer {token}",
+                        "X-Desktop-Key": "my_secret_desktop_key_2026"
                     }
-                    resp = requests.post(f"{API_URL}/log_session",
-                                         json=payload, headers=headers,
-                                         timeout=10)
+                    payload = {
+                        "exercise": exercise, "reps": reps,
+                        "score": avg_score, "pain_level": pain
+                    }
+                    # 5-second timeout. If the VPN is blocking it, it will fail here.
+                    resp = requests.post(f"{API_URL}/log_session", json=payload, headers=headers, timeout=5)
                     ok = resp.status_code in (200, 201)
-                    # trampoline back to main thread
-                    self._emit_safe("stats", json.dumps(
-                        {"__cloud_sync": "ok" if ok else "fail"}
-                    ))
+
+                    # Only show green if the Pi actively accepted the data
+                    self._emit_safe("stats", json.dumps({"__cloud_sync": "ok" if ok else "fail"}))
                 except Exception as err:
-                    print(f"[Bridge] cloud POST error: {err}")
+                    # Print the exact reason it failed to your terminal (e.g., Timeout, ConnectionRefused)
+                    print(f"\n[NETWORK ERROR] Could not reach Raspberry Pi: {err}\n")
+                    self._emit_safe("stats", json.dumps({"__cloud_sync": "fail"}))
+
             threading.Thread(target=_post, daemon=True).start()
         except Exception as e:
             print(f"[Bridge] submit_pain_score error: {e}")
@@ -278,7 +281,10 @@ class Bridge(QObject):
         token = self._token
         def _fetch():
             try:
-                headers = {"Authorization": f"Bearer {token}"}
+                headers = {
+                    "Authorization": f"Bearer {token}",
+                    "X-Desktop-Key": "my_secret_desktop_key_2026"
+                }
                 resp = requests.get(f"{API_URL}/get_history",
                                     headers=headers, timeout=10)
                 if resp.status_code == 200:
@@ -317,30 +323,6 @@ class PhysioDashboard(QMainWindow):
         settings.setAttribute(QWebEngineSettings.LocalContentCanAccessFileUrls,   True)
         settings.setAttribute(QWebEngineSettings.JavascriptEnabled,               True)
         settings.setAttribute(QWebEngineSettings.AllowRunningInsecureContent,     True)
-
-        # ── Setup PDF Download Handler ──────────────────────────────────────
-        def handle_download(download_item):
-            # 1. Catch the filename Javascript is trying to save (Physio_Report.pdf)
-            suggested_name = download_item.suggestedFileName()
-            
-            # 2. Force open the Windows "Save As" dialog
-            save_path, _ = QFileDialog.getSaveFileName(
-                self,                     # Attaches the dialog to your main window
-                "Save Medical Report",    # Window title
-                suggested_name,           # Default file name
-                "PDF Files (*.pdf)"       # File filter
-            )
-            
-            # 3. If the user picks a folder and clicks Save, write the file!
-            if save_path:
-                download_item.setPath(save_path)
-                download_item.accept()
-            else:
-                download_item.cancel() # If they hit cancel, dump the file
-
-        # 4. Connect Chromium's download signal to our new function
-        self._view.page().profile().downloadRequested.connect(handle_download)
-        # ───────────────────────────────────────────────────────────────
 
         # ── QWebChannel ────────────────────────────────────────────────────
         self.worker = VisionWorker()
@@ -407,10 +389,22 @@ class PhysioDashboard(QMainWindow):
     @Slot(dict)
     def _on_session_finish(self, report: dict):
         if report.get("error"):
-            self.bridge.stats_changed.emit(
-                json.dumps({"__session_error": True}))
+            self.bridge.stats_changed.emit(json.dumps({"__session_error": True}))
             return
-        self.bridge.session_finished.emit(json.dumps(report))
+
+        json_str = json.dumps(report)
+
+        # ── THE ULTIMATE BYPASS ───────────────────────────────────────────
+        # Since WebChannel is dropping the signal when the thread dies,
+        # we bypass it entirely and forcefully execute the JavaScript function
+        # using the exact same injection method that successfully fired the alert.
+
+        safe_js_string = json.dumps(json_str)  # Safely escapes quotes for JavaScript
+        js_code = f"if (typeof onSessionFinished === 'function') {{ onSessionFinished({safe_js_string}); }}"
+
+        # Fire the injection 150ms after the thread dies to ensure UI is ready
+        QTimer.singleShot(150, lambda: self._view.page().runJavaScript(js_code))
+        # ───────────────────────────────────────────────────────────────────
 
     # ── Lifecycle ──────────────────────────────────────────────────────────
 

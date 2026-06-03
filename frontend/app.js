@@ -154,10 +154,6 @@ function startSession() {
 function stopSession() {
   if (!backend) return;
   backend.stop_session();
-  ui.sessionRunning = false;
-  updateSessionButton();
-  updateStatusPill("OFFLINE", "");
-  setVideoFeed(false);
 }
 
 function toggleSession() {
@@ -718,6 +714,18 @@ function toggleAccordion(id) {
 function openPainDialog(report) {
   const overlay = document.getElementById("pain-overlay");
   if (!overlay) return;
+
+  // 1. Force undeniable geometry (Bypasses the CSS 'inset' bug)
+  overlay.style.position = "fixed";
+  overlay.style.top = "0";
+  overlay.style.left = "0";
+  overlay.style.width = "100vw";
+  overlay.style.height = "100vh";
+  overlay.style.backgroundColor = "rgba(15, 23, 42, 0.95)";
+  overlay.style.zIndex = "9999";
+
+  // 2. Force it to display
+  overlay.style.display = "flex";
   overlay.classList.add("open");
 
   // Reset slider
@@ -726,7 +734,11 @@ function openPainDialog(report) {
 }
 
 function closePainDialog() {
-  document.getElementById("pain-overlay")?.classList.remove("open");
+  const overlay = document.getElementById("pain-overlay");
+  if (overlay) {
+    overlay.style.display = "none";
+    overlay.classList.remove("open");
+  }
 }
 
 function updatePainUi(val) {
@@ -738,10 +750,17 @@ function updatePainUi(val) {
   if (display) display.textContent = val;
   if (label)   label.textContent   = PAIN_LABELS[val] || "";
 
-  // Dynamic image: pain_imgs/00.PNG … pain_imgs/10.PNG
+  // ── Range-based Image Selector ──
   if (img) {
-    const padded = String(val).padStart(2, "0");
-    img.src = `../pain_imgs/${padded}.PNG`;
+    let imgName;
+    if      (val <= 1)  imgName = "01";
+    else if (val <= 3)  imgName = "23";
+    else if (val <= 5)  imgName = "45";
+    else if (val <= 7)  imgName = "67";
+    else if (val <= 9)  imgName = "89";
+    else                imgName = "10";
+
+    img.src = `pain_imgs/Squat/${imgName}.PNG`;
   }
 
   // Colour the number
