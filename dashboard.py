@@ -253,28 +253,69 @@ class Bridge(QObject):
 
             def _post():
                 try:
+                    import json
                     headers = {
                         "Authorization": f"Bearer {token}",
                         "X-Desktop-Key": "my_secret_desktop_key_2026"
                     }
+
+                    # 1. Convert JS string back into a native Python list
+                    try:
+                        parsed_details = json.loads(details_json)
+                    except:
+                        parsed_details = []
+
+                    # 2. Send native JSON to the API, NOT a stringified mess!
                     payload = {
-                        "exercise": exercise, "reps": reps,
-                        "score": avg_score, "pain_level": pain
+                        "exercise": exercise,
+                        "reps": reps,
+                        "score": avg_score,
+                        "pain_level": pain,
+                        "details": parsed_details
                     }
-                    # 5-second timeout. If the VPN is blocking it, it will fail here.
                     resp = requests.post(f"{API_URL}/log_session", json=payload, headers=headers, timeout=5)
                     ok = resp.status_code in (200, 201)
-
-                    # Only show green if the Pi actively accepted the data
                     self._emit_safe("stats", json.dumps({"__cloud_sync": "ok" if ok else "fail"}))
                 except Exception as err:
-                    # Print the exact reason it failed to your terminal (e.g., Timeout, ConnectionRefused)
-                    print(f"\n[NETWORK ERROR] Could not reach Raspberry Pi: {err}\n")
+                    print(f"\n[NETWORK ERROR] Could not reach API: {err}\n")
                     self._emit_safe("stats", json.dumps({"__cloud_sync": "fail"}))
 
             threading.Thread(target=_post, daemon=True).start()
         except Exception as e:
             print(f"[Bridge] submit_pain_score error: {e}")
+
+    @Slot()
+    def fetch_history(self):
+        token = self._token
+
+        def _fetch():
+            try:
+                import ast
+                import json
+                headers = {
+                    "Authorization": f"Bearer {token}",
+                    "X-Desktop-Key": "my_secret_desktop_key_2026"
+                }
+                resp = requests.get(f"{API_URL}/get_history",
+                                    headers=headers, timeout=10)
+                if resp.status_code == 200:
+                    records = resp.json().get("history", [])
+
+                    # 3. Clean up the "Single Quote" curse from old SQLite records
+                    for rec in records:
+                        if isinstance(rec.get("details"), str):
+                            try:
+                                # ast.literal_eval safely parses Python strings like "[{'rep_num': 1}]"
+                                # back into real lists, bypassing the JS JSON.parse crash!
+                                rec["details"] = ast.literal_eval(rec["details"])
+                            except Exception:
+                                rec["details"] = []
+
+                    self._emit_safe("history", json.dumps(records))
+            except Exception as err:
+                print(f"[Bridge] fetch_history error: {err}")
+
+        threading.Thread(target=_fetch, daemon=True).start()
 
     @Slot()
     def fetch_history(self):

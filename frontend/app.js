@@ -35,7 +35,7 @@ new QWebChannel(qt.webChannelTransport, (channel) => {
 // ---------------------------------------------------------------------------
 const ui = {
   currentPage: "hub",
-  currentExercise: null,    // key: "squat" | "sts" | "pushup" | "curl"
+  currentExercise: null,    // key: "squat" | "sts" | "pushup" | "curl" | "lateral_raise"
   sessionRunning: false,
   lastReport: null,         // holds report dict while pain dialog is open
 };
@@ -56,6 +56,8 @@ const EXERCISES = [
   { key: "sts",    title: "Sit to Stand",  desc: "Geriatric fall-risk assessment",     icon: "🪑" },
   { key: "pushup", title: "Push-up",       desc: "Upper body & core stabilisation",    icon: "💪" },
   { key: "curl",   title: "Bicep Curl",    desc: "Elbow ROM & cheat classification",   icon: "🏋️" },
+  { key: "lateral_raise", title: "Lateral Raise", desc: "Shoulder abduction & symmetry analysis", icon: "🙆" },
+  { key: "lateral_raise", title: "Lateral Raise", desc: "Shoulder abduction & cheat classification", icon: "🙆" },
 ];
 
 const EXERCISE_LABELS = Object.fromEntries(EXERCISES.map(e => [e.key, e.title]));
@@ -242,6 +244,18 @@ function onSessionFinished(jsonStr) {
 
 function onHistoryLoaded(jsonStr) {
   const records = JSON.parse(jsonStr);
+
+  // FIX 1: Parse the SQLite stringified JSON details back into actual JS Arrays
+  records.forEach(r => {
+    if (typeof r.details === 'string') {
+      try {
+        r.details = JSON.parse(r.details);
+      } catch (e) {
+        r.details = [];
+      }
+    }
+  });
+
   _cachedRecords = records;
   populateRecords(records);
   updateKpis(records);
@@ -780,7 +794,7 @@ function submitPainScore() {
 
   if (!backend) return;
 
-  // Add record locally in Records page
+  // FIX 2: Add the new record properly to the cache and re-render everything
   const newRecord = {
     date:       new Date().toLocaleDateString("en-GB", { day:"2-digit", month:"short", year:"numeric" }),
     exercise:   ui.currentExercise || "squat",
@@ -789,7 +803,16 @@ function submitPainScore() {
     pain_level: pain,
     details:    report.details || [],
   };
-  populateRecords([newRecord, ...currentRecords()]);
+
+  // Add the new record to the very top of the master cache
+  _cachedRecords = [newRecord, ..._cachedRecords];
+
+  // Refresh all UI elements so the new record appears instantly without deleting history
+  populateRecords(_cachedRecords);
+  updateKpis(_cachedRecords);
+  renderAnalyticsChart(_cachedRecords, "all");
+  renderAnalyticsBreakdown(_cachedRecords);
+  renderAnalyticsKpis(_cachedRecords);
 
   backend.submit_pain_score(
     String(pain),

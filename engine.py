@@ -40,19 +40,24 @@ class AppState:
     GUIDE_PATH: str = "Video_Generation_Person_Squatting.mp4"
 
     # --- Squat Analysis Thresholds ---
-    PARAM_SQUAT_DEPTH: float = 140.0   # Knee angle that counts as "down"
+    PARAM_SQUAT_DEPTH: float = 140.0  # Knee angle that counts as "down"
     PARAM_UP_THRESHOLD: float = 160.0  # Knee angle that counts as "standing"
-    PARAM_LEAN_WARN: float = 40.0      # Trunk lean degrees → "Chest Up" warning
-    PARAM_LEAN_CRIT: float = 55.0      # Trunk lean degrees → critical alert
-    PARAM_ROUNDING: float = 18.0       # Max back curvature degrees allowed
-    PARAM_PUSHUP_UP_ANGLE: float = 145.0      # Elbow angle that counts as "up"
-    PARAM_PUSHUP_DOWN_ANGLE: float = 105.0    # Elbow angle that counts as "down"
-    PARAM_PUSHUP_TIMEOUT_FRAMES: int = 300    # Max frames allowed for one rep attempt
-    PARAM_PUSHUP_HIP_DEV_METERS: float = 0.12 # Max hip deviation from body line before warning
+    PARAM_LEAN_WARN: float = 40.0  # Trunk lean degrees → "Chest Up" warning
+    PARAM_LEAN_CRIT: float = 55.0  # Trunk lean degrees → critical alert
+    PARAM_ROUNDING: float = 18.0  # Max back curvature degrees allowed
+    PARAM_PUSHUP_UP_ANGLE: float = 145.0  # Elbow angle that counts as "up"
+    PARAM_PUSHUP_DOWN_ANGLE: float = 105.0  # Elbow angle that counts as "down"
+    PARAM_PUSHUP_TIMEOUT_FRAMES: int = 300  # Max frames allowed for one rep attempt
+    PARAM_PUSHUP_HIP_DEV_METERS: float = 0.12  # Max hip deviation from body line before warning
     PARAM_PUSHUP_HIP_DEV_RATIO: float = 0.20  # Max relative hip deviation vs body length
-    PARAM_HEAD_ANGLE: float = 65.0            # Max head-to-torso angle before "Head Down" warning
+    PARAM_HEAD_ANGLE: float = 65.0  # Max head-to-torso angle before "Head Down" warning
     PARAM_CURL_DOWN_ANGLE: float = 150.0  # Arm fully extended
     PARAM_CURL_UP_ANGLE: float = 75.0  # Arm fully curled
+
+    # --- Lateral Raise Analysis Thresholds ---
+    PARAM_LATERAL_RAISE_DOWN_ANGLE: float = 30.0  # Shoulder angle when arms rest at sides
+    PARAM_LATERAL_RAISE_ASYMMETRY_TOL: float = 18.0  # Max L/R peak-angle difference (degrees)
+    PARAM_LATERAL_RAISE_SHRUG_RATIO: float = 0.65  # Shrug if ear-shoulder dist drops below this × baseline
 
     # --- Session History (in-memory, not persisted) ---
     HISTORY: list = []
@@ -186,9 +191,10 @@ except:
     STS_MODEL = None
     print("[Physio-Vision] WARNING: sit_to_stand_robust.keras not found.")
 
+
 def normalize_skeleton_sts_live(frames_list):
     """Formats the 88 captured frames exactly how the Keras model expects it."""
-    data = np.array(frames_list).reshape(1, 88, 22, 3) # Batch 1, 88 frames, 22 joints, 3 dims
+    data = np.array(frames_list).reshape(1, 88, 22, 3)  # Batch 1, 88 frames, 22 joints, 3 dims
     root = data[:, :, 0:1, :]
     data = data - root
     left_hip, right_hip = data[:, :, 18:19, :], data[:, :, 14:15, :]
@@ -197,13 +203,17 @@ def normalize_skeleton_sts_live(frames_list):
     return data.reshape(1, 88, 66)
 
 
-def extract_prmd_features(lm):
+def extract_prmd_features(lm, mirror_x=False):
     """Translates MediaPipe's 33 landmarks into UI-PRMD's 22 specific joints."""
 
-    # FIX: INVERT THE Y-AXIS (MediaPipe is positive-down, PRMD is positive-up)
-    def pt(i): return [lm[i].x, -lm[i].y, lm[i].z]
+    # If mirror_x is True, we negate X to undo the webcam mirror effect
+    def pt(i):
+        return [-lm[i].x if mirror_x else lm[i].x, -lm[i].y, lm[i].z]
 
-    def avg(i, j): return [(lm[i].x + lm[j].x) / 2, -(lm[i].y + lm[j].y) / 2, (lm[i].z + lm[j].z) / 2]
+    def avg(i, j):
+        x_i = -lm[i].x if mirror_x else lm[i].x
+        x_j = -lm[j].x if mirror_x else lm[j].x
+        return [(x_i + x_j) / 2, -(lm[i].y + lm[j].y) / 2, (lm[i].z + lm[j].z) / 2]
 
     prmd = [
         avg(23, 24), pt(23), avg(11, 12), avg(11, 12), pt(0), pt(0),
@@ -211,7 +221,6 @@ def extract_prmd_features(lm):
         pt(24), pt(26), pt(28), pt(32), pt(23), pt(25), pt(27), pt(31)
     ]
     return [coord for joint in prmd for coord in joint]
-
 
 
 def analyze_form_mechanics_3d(world_landmarks, stage: str, knee_angle: float):
@@ -227,9 +236,9 @@ def analyze_form_mechanics_3d(world_landmarks, stage: str, knee_angle: float):
         norm = np.linalg.norm(v)
         return v / norm if norm > 0 else v
 
-    l_sh,  r_sh  = ext(11), ext(12)
+    l_sh, r_sh = ext(11), ext(12)
     l_hip, r_hip = ext(23), ext(24)
-    mid_sh  = (l_sh  + r_sh)  / 2
+    mid_sh = (l_sh + r_sh) / 2
     mid_hip = (l_hip + r_hip) / 2
 
     # --- 1. Trunk lean check (height-adjusted tolerance) ---
@@ -258,6 +267,7 @@ def analyze_form_mechanics_3d(world_landmarks, stage: str, knee_angle: float):
 
     return penalty, feedback
 
+
 def analyze_pushup_form_3d(world_landmarks, elbow_angle: float):
     """Check pushup-specific form: hip sag, elbow flare, head drop."""
     penalty = 0.0
@@ -268,18 +278,18 @@ def analyze_pushup_form_3d(world_landmarks, elbow_angle: float):
                          world_landmarks[idx].y,
                          world_landmarks[idx].z])
 
-    l_sh,  r_sh  = ext(11), ext(12)
+    l_sh, r_sh = ext(11), ext(12)
     l_hip, r_hip = ext(23), ext(24)
     l_ank, r_ank = ext(27), ext(28)
-    nose         = ext(0)
+    nose = ext(0)
 
-    mid_sh  = (l_sh  + r_sh)  / 2
+    mid_sh = (l_sh + r_sh) / 2
     mid_hip = (l_hip + r_hip) / 2
     mid_ank = (l_ank + r_ank) / 2
 
     # --- 1. Hip Sag / Pike check ---
     # Ideal: shoulders, hips, ankles form a straight line (small deviation)
-    body_vec   = mid_ank - mid_sh
+    body_vec = mid_ank - mid_sh
     hip_offset = mid_hip - mid_sh
     if np.linalg.norm(body_vec) > 0:
         t = np.dot(hip_offset, body_vec) / np.dot(body_vec, body_vec)
@@ -290,8 +300,8 @@ def analyze_pushup_form_3d(world_landmarks, elbow_angle: float):
         sag_ratio = sag_dist / max(body_len, 1e-6)
         # Evaluate sag mostly under load (mid/lower pushup) to reduce top-position noise.
         if elbow_angle < 140 and (
-            sag_dist > state.PARAM_PUSHUP_HIP_DEV_METERS or
-            sag_ratio > state.PARAM_PUSHUP_HIP_DEV_RATIO
+                sag_dist > state.PARAM_PUSHUP_HIP_DEV_METERS or
+                sag_ratio > state.PARAM_PUSHUP_HIP_DEV_RATIO
         ):
             penalty += 0.25
             direction = "Hip Sag" if mid_hip[1] > closest[1] else "Hip Pike"
@@ -313,8 +323,8 @@ def analyze_pushup_form_3d(world_landmarks, elbow_angle: float):
     if elbow_angle < 100:
         l_elb = ext(13)
         r_elb = ext(14)
-        l_wr  = ext(15)
-        r_wr  = ext(16)
+        l_wr = ext(15)
+        r_wr = ext(16)
         # Elbow should track roughly over wrist, not splayed wide
         l_flare = abs((l_elb - l_sh)[0]) - abs((l_wr - l_sh)[0])
         r_flare = abs((r_elb - r_sh)[0]) - abs((r_wr - r_sh)[0])
@@ -323,6 +333,7 @@ def analyze_pushup_form_3d(world_landmarks, elbow_angle: float):
             feedback.append("Elbow Flare")
 
     return penalty, feedback
+
 
 # =============================================================================
 #  PART 3: AUDIO (NON-BLOCKING)
@@ -342,7 +353,6 @@ def speak_async(text: str) -> None:
             pass
 
     threading.Thread(target=_speak, daemon=True).start()
-
 
 
 try:
@@ -383,6 +393,21 @@ except Exception as e:
     CURL_MODEL = None
     print(f"[Physio-Vision] ERROR loading Bicep Curl model: {e}")
 
+try:
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    target_model_path = os.path.join(current_dir, "lateral_raise.keras")
+
+    if os.path.exists(target_model_path):
+        LATERAL_RAISE_MODEL = tf.keras.models.load_model(target_model_path)
+        print("[Physio-Vision] SUCCESS: Lateral Raise AI Model Loaded via Absolute Path.")
+    else:
+        LATERAL_RAISE_MODEL = None
+        print(f"[Physio-Vision] WARNING: Model file not found at {target_model_path}")
+
+except Exception as e:
+    LATERAL_RAISE_MODEL = None
+    print(f"[Physio-Vision] ERROR loading Lateral Raise model: {e}")
+
 
 # --- 2. NORMALIZATION FUNCTIONS ---
 def normalize_skeleton_squat_live(frames_list):
@@ -396,6 +421,7 @@ def normalize_skeleton_squat_live(frames_list):
     data = data / np.maximum(spine_len, 0.0001)
     return data.reshape(1, 81, 66)
 
+
 def normalize_skeleton_sts_live(frames_list):
     """STS Normalizer: 88 frames, scales by Pelvis Width"""
     import numpy as np
@@ -407,16 +433,18 @@ def normalize_skeleton_sts_live(frames_list):
     data = data / np.maximum(pelvis_width, 0.0001)
     return data.reshape(1, 88, 66)
 
+
 def normalize_skeleton_pushup_live(frames_list):
     """Pushup Normalizer: 60 frames, scales by Shoulder Width"""
     data = np.array(frames_list).reshape(1, 60, 22, 3)
     root = data[:, :, 0:1, :]
     data = data - root
-    l_sh = data[:, :, 6:7, :]   # left shoulder in PRMD mapping
+    l_sh = data[:, :, 6:7, :]  # left shoulder in PRMD mapping
     r_sh = data[:, :, 10:11, :]  # right shoulder
     shoulder_width = np.linalg.norm(l_sh - r_sh, axis=3, keepdims=True)
     data = data / np.maximum(shoulder_width, 0.0001)
     return data.reshape(1, 60, 66)
+
 
 def normalize_skeleton_curl_live(frames_list):
     """
@@ -439,17 +467,44 @@ def normalize_skeleton_curl_live(frames_list):
 
     # ── Step 1: Center at hips ──
     mid_hip = (data[:, 23:24, :] + data[:, 24:25, :]) / 2.0  # (40, 1, 3)
-    data = data - mid_hip                                      # hip is now at origin
+    data = data - mid_hip  # hip is now at origin
 
     # ── Step 2: Scale by torso length ──
     # mid_sh is computed AFTER centering, so the hip origin is [0,0,0].
     # Torso length = distance from origin to shoulder midpoint = norm(mid_sh).
     # DO NOT subtract mid_hip again here — it is no longer the hip position.
-    mid_sh = (data[:, 11:12, :] + data[:, 12:13, :]) / 2.0   # (40, 1, 3)
+    mid_sh = (data[:, 11:12, :] + data[:, 12:13, :]) / 2.0  # (40, 1, 3)
     torso_length = np.linalg.norm(mid_sh, axis=2, keepdims=True)  # ← FIXED (was: mid_sh - mid_hip)
     data = data / np.maximum(torso_length, 0.0001)
 
     return data.reshape(1, 40, 99)
+
+
+def normalize_skeleton_lateral_raise_live(frames_list):
+    """
+    Matches the exact UIPRMD_REG_SSA training pipeline:
+    74 frames, 66 features, Pelvis Anchor Normalization.
+    """
+    import numpy as np
+    import cv2
+
+    raw = np.array(frames_list, dtype=np.float32)
+    # Resize to exactly 74 frames and 66 features
+    warped = cv2.resize(raw, (66, 74), interpolation=cv2.INTER_LINEAR)
+    data = warped.reshape(1, 74, 22, 3)
+
+    # Center at Mid-Hip
+    root = data[:, :, 0:1, :]
+    data = data - root
+
+    # Scale by Pelvis Width
+    left_hip, right_hip = data[:, :, 18:19, :], data[:, :, 14:15, :]
+    pelvis_width = np.linalg.norm(left_hip - right_hip, axis=3, keepdims=True)
+    data = data / np.maximum(pelvis_width, 0.0001)
+
+    return data.reshape(1, 74, 66)
+
+
 
 def apply_mirror_matrix(landmarks):
     """Swaps left/right body parts and inverts X to undo the webcam mirror effect."""
@@ -466,22 +521,25 @@ def apply_mirror_matrix(landmarks):
         mirrored.extend([-lm.x, lm.y, lm.z])
     return mirrored
 
+
 # =============================================================================
 #  PART 4: VISION WORKER THREAD
 # =============================================================================
+
+
 
 class VisionWorker(QThread):
     """Runs the camera loop + MediaPipe pose on a background thread.
     Communicates back to the GUI exclusively via Qt signals."""
 
-    frame_processed  = Signal(QImage)       # Rendered camera frame
-    stats_update     = Signal(dict)         # Rep count / score / feedback
-    system_status    = Signal(str, str)     # (label_text, hex_color)
-    session_finished = Signal(dict)         # Full session report dict
+    frame_processed = Signal(QImage)  # Rendered camera frame
+    stats_update = Signal(dict)  # Rep count / score / feedback
+    system_status = Signal(str, str)  # (label_text, hex_color)
+    session_finished = Signal(dict)  # Full session report dict
 
     # Internal FSM states
-    STATE_CALIB   = 0
-    STATE_WARMUP  = 1
+    STATE_CALIB = 0
+    STATE_WARMUP = 1
     STATE_SESSION = 2
 
     def __init__(self):
@@ -506,6 +564,13 @@ class VisionWorker(QThread):
         self.sts_stage = "WAITING"
         self.sts_timer = 0.0
         self.sts_buffer = []
+
+        # --- NEW Lateral Raise TRACKERS ---
+        self.lr_peak_left = 0.0
+        self.lr_peak_right = 0.0
+        self.lr_baseline_shrug = 1.0
+        self.lr_min_shrug = 1.0
+        self._lr_frame_count = 0
 
     # ------------------------------------------------------------------
     # Main loop
@@ -568,8 +633,6 @@ class VisionWorker(QThread):
 
         self.cap.release()
 
-
-
         # Build and emit the final session report
         report = {
             "date": self.start_time.strftime("%Y-%m-%d %H:%M") if self.start_time else "Unknown",
@@ -589,7 +652,7 @@ class VisionWorker(QThread):
         # STATE 0: PROFILE CALIBRATION
         # ==========================================
         if self.current_state == self.STATE_CALIB:
-            if self.exercise_mode == "pushup":
+            if self.exercise_mode in ("pushup", "lateral_raise"):
                 self.current_state = self.STATE_SESSION
                 speak_async("System Ready.")
             elif not is_profile_view(landmarks_2d):
@@ -667,7 +730,7 @@ class VisionWorker(QThread):
                 elif self.sts_stage == "INFERENCE":
                     try:
                         import cv2 as cv2
-                        raw_frames    = np.array(self.sts_buffer, dtype=np.float32)
+                        raw_frames = np.array(self.sts_buffer, dtype=np.float32)
                         warped_frames = cv2.resize(raw_frames, (66, 60),
                                                    interpolation=cv2.INTER_LINEAR)
                         if PUSHUP_MODEL:
@@ -679,7 +742,7 @@ class VisionWorker(QThread):
                         self.reps += 1
                         raw_min, raw_max = 0.55, 0.95
                         score = int(max(0, min(100,
-                            ((prediction - raw_min) / (raw_max - raw_min)) * 100)))
+                                               ((prediction - raw_min) / (raw_max - raw_min)) * 100)))
 
                         feedback = "Excellent Form"
                         if hasattr(self, 'current_rep_issues'):
@@ -709,11 +772,11 @@ class VisionWorker(QThread):
                 # Compare Z-depth of shoulders to see how the MIRRORED UI sees you
                 right_shoulder_z = landmarks_3d[12].z
                 left_shoulder_z = landmarks_3d[11].z
-                
+
                 # Scenario A: You physically face RIGHT (Mirrored screen shows facing LEFT)
                 # This ironically perfectly matches the Kaggle dataset layout! No fix needed.
                 facing_right = left_shoulder_z < right_shoulder_z
-                
+
                 if right_shoulder_z < left_shoulder_z:
                     active_sh, active_elb, active_wr = landmarks_3d[12], landmarks_3d[14], landmarks_3d[16]
                     needs_matrix_fix = False
@@ -722,9 +785,9 @@ class VisionWorker(QThread):
                 else:
                     active_sh, active_elb, active_wr = landmarks_3d[11], landmarks_3d[13], landmarks_3d[15]
                     needs_matrix_fix = True
-                    
+
                 elbow_angle = calculate_angle_3d(active_sh, active_elb, active_wr)
-                
+
                 is_extended = elbow_angle > state.PARAM_CURL_DOWN_ANGLE
                 is_curled = elbow_angle < state.PARAM_CURL_UP_ANGLE
 
@@ -733,12 +796,12 @@ class VisionWorker(QThread):
                         self.sts_stage = "HOLDING"
                         self.sts_timer = time.time()
                         self.system_status.emit("HOLD ARM STRAIGHT...", "#ffaa00")
-                
+
                 elif self.sts_stage == "HOLDING":
                     if not is_extended:
                         self.sts_stage = "WAITING"
                         self.system_status.emit("EXTEND ARM DOWN", "#ffaa00")
-                    elif time.time() - self.sts_timer > 0.6: 
+                    elif time.time() - self.sts_timer > 0.6:
                         self.sts_stage = "RECORDING"
                         self.sts_buffer = []
                         self.hit_top = False
@@ -764,7 +827,8 @@ class VisionWorker(QThread):
                     #                         No joint swap needed — the right arm is already foreground.
                     #
                     if facing_right:
-                        frame_data = apply_mirror_matrix(landmarks_3d)   # swap L/R + negate X
+                        frame_data = apply_mirror_matrix(landmarks_3d)  # swap L/R + negate X
+
                     else:
                         frame_data = []
                         for lm in landmarks_3d:
@@ -788,15 +852,15 @@ class VisionWorker(QThread):
                         if CURL_MODEL:
                             model_input = normalize_skeleton_curl_live(self.sts_buffer)
                             prediction = CURL_MODEL.predict(model_input, verbose=0)[0]
-                            
+
                             class_idx = np.argmax(prediction)
                             confidence = prediction[class_idx]
-                            
+
                             # Heave bias dampener
                             if class_idx == 2 and confidence < 0.85:
-                                class_idx = 3 
+                                class_idx = 3
                                 confidence = 0.80
-                            
+
                             feedback_map = {
                                 0: "Drag Cheat (Elbow Shift)",
                                 1: "Half Rep (Incomplete ROM)",
@@ -805,12 +869,12 @@ class VisionWorker(QThread):
                                 4: "Swing Cheat (Shoulder Leverage)"
                             }
                             feedback = feedback_map.get(class_idx, "Unknown Pattern")
-                            
+
                             # Fixed the 10% math lock
                             if class_idx == 3:
                                 score = int(confidence * 100)
                             else:
-                                score = int((1.0 - confidence) * 60) + 40 # Maps to a 40-100 range instead of 10
+                                score = int((1.0 - confidence) * 60) + 40  # Maps to a 40-100 range instead of 10
                         else:
                             feedback = "Excellent Form"
                             score = 90
@@ -834,6 +898,241 @@ class VisionWorker(QThread):
 
                     self.sts_stage = "WAITING"
                     self.system_status.emit("RESETTING...", "#ffaa00")
+                return
+
+            if self.exercise_mode == "lateral_raise":
+                # Shoulder abduction angle: angle at the shoulder between the
+                # hip (torso reference) and the elbow.
+                #   ~0°  → arm hanging at the side
+                #   ~90° → arm raised out to shoulder height
+                left_angle = calculate_angle_3d(landmarks_3d[23], landmarks_3d[11], landmarks_3d[13])
+                right_angle = calculate_angle_3d(landmarks_3d[24], landmarks_3d[12], landmarks_3d[14])
+                avg_angle = (left_angle + right_angle) / 2
+
+                is_down = avg_angle < state.PARAM_LATERAL_RAISE_DOWN_ANGLE
+                is_raised = avg_angle > state.PARAM_LATERAL_RAISE_DOWN_ANGLE + 20
+
+                def _shrug_ratio():
+                    """Avg ear-to-shoulder 3D distance, normalised by torso length."""
+                    def dist3d(p1, p2):
+                        return math.sqrt((p1.x - p2.x)**2 + (p1.y - p2.y)**2 + (p1.z - p2.z)**2)
+
+                    l_sh, r_sh = landmarks_3d[11], landmarks_3d[12]
+                    l_ear, r_ear = landmarks_3d[7], landmarks_3d[8]
+                    l_hip, r_hip = landmarks_3d[23], landmarks_3d[24]
+
+                    # Use true 3D Torso Length (Mid-Shoulder to Mid-Hip)
+                    # This does NOT compress when the user turns sideways!
+                    mid_sh_x, mid_sh_y, mid_sh_z = (l_sh.x + r_sh.x)/2, (l_sh.y + r_sh.y)/2, (l_sh.z + r_sh.z)/2
+                    mid_hip_x, mid_hip_y, mid_hip_z = (l_hip.x + r_hip.x)/2, (l_hip.y + r_hip.y)/2, (l_hip.z + r_hip.z)/2
+                    torso_len = math.sqrt((mid_sh_x - mid_hip_x)**2 + (mid_sh_y - mid_hip_y)**2 + (mid_sh_z - mid_hip_z)**2) + 1e-6
+
+                    l_dist = dist3d(l_ear, l_sh)
+                    r_dist = dist3d(r_ear, r_sh)
+
+                    return ((l_dist + r_dist) / 2) / torso_len
+
+                if self.sts_stage == "WAITING":
+                    if is_down:
+                        self.sts_stage = "HOLDING"
+                        self.sts_timer = time.time()
+                        self.system_status.emit("HOLD ARMS DOWN...", "#ffaa00")
+
+                elif self.sts_stage == "HOLDING":
+                    if not is_down:
+                        self.sts_stage = "WAITING"
+                        self.system_status.emit("LOWER ARMS TO YOUR SIDES", "#ffaa00")
+                    elif time.time() - self.sts_timer > 0.6:
+                        self.sts_stage = "RECORDING"
+                        self.sts_buffer = []
+                        self.lr_peak_left = 0.0
+                        self.lr_peak_right = 0.0
+                        self.lr_baseline_shrug = _shrug_ratio()
+                        self.lr_min_shrug = self.lr_baseline_shrug
+                        self.hit_top = False
+                        self.system_status.emit("● RECORDING (RAISE ARMS)", "#ff4444")
+                        speak_async("Begin.")
+
+
+
+                elif self.sts_stage == "RECORDING":
+
+                    # mirror_x=True restores the true 3D spatial geometry so arms go OUT, not IN
+
+                    self.sts_buffer.append(extract_prmd_features(landmarks_3d, mirror_x=True))
+
+                    self.lr_peak_left = max(self.lr_peak_left, left_angle)
+
+                    self.lr_peak_right = max(self.lr_peak_right, right_angle)
+
+                    self.lr_min_shrug = min(self.lr_min_shrug, _shrug_ratio())
+
+                    if is_raised:
+                        self.hit_top = True
+
+                    if getattr(self, 'hit_top', False) and is_down:
+                        self.sts_stage = "INFERENCE"
+
+                        self.system_status.emit("ANALYZING...", "#0099ff")
+
+                    self._lr_frame_count += 1
+
+                    if self._lr_frame_count > 200:
+                        self.sts_stage = "WAITING"
+
+                        self._lr_frame_count = 0
+
+                        self.system_status.emit("TIMEOUT. RESETTING.", "#ffaa00")
+
+
+                elif self.sts_stage == "INFERENCE":
+
+                    try:
+
+                        self._lr_frame_count = 0
+
+                        peak_avg = (self.lr_peak_left + self.lr_peak_right) / 2
+
+                        asymmetry = abs(self.lr_peak_left - self.lr_peak_right)
+
+                        shrug_detected = self.lr_min_shrug < (
+
+                                self.lr_baseline_shrug * state.PARAM_LATERAL_RAISE_SHRUG_RATIO)
+
+                        # ---------------------------------------------------------
+
+                        # 1. CALCULATE AI SCORE (The "Vibe" Check)
+
+                        # ---------------------------------------------------------
+
+                        ai_score = 90
+
+                        if LATERAL_RAISE_MODEL:
+                            normalized = normalize_skeleton_lateral_raise_live(self.sts_buffer)
+
+                            prediction = LATERAL_RAISE_MODEL.predict(normalized, verbose=0)[0]
+
+                            # Using the Regression logic
+
+                            raw_min, raw_max = 0.55, 0.95
+
+                            pred = float(prediction[0])
+
+                            ai_score = int(max(0, min(100, ((pred - raw_min) / (raw_max - raw_min)) * 100)))
+
+                        # ---------------------------------------------------------
+
+                        # 2. CALCULATE PURE MATH SCORE (The Geometry Check)
+
+                        # ---------------------------------------------------------
+
+                        math_score = 100
+
+                        math_feedback = "Excellent Form"
+
+                        rep_frames = len(self.sts_buffer)
+
+                        # Penalty A: Momentum / Tube-Man Flailing
+
+                        if rep_frames < 35:
+
+                            math_score -= 40
+
+                            math_feedback = "Momentum Cheat (Swinging / Too Fast)"
+
+
+                        # Penalty B: Incomplete Range of Motion
+
+                        elif peak_avg < 65:
+
+                            math_score -= 35
+
+                            math_feedback = "Half Rep (Incomplete ROM)"
+
+                        elif peak_avg < 75:
+
+                            math_score -= 15  # Minor deduction for being slightly low
+
+                            math_feedback = "Raise Arms Slightly Higher"
+
+
+                        # Penalty C: Asymmetry
+
+                        elif asymmetry > state.PARAM_LATERAL_RAISE_ASYMMETRY_TOL:
+
+                            # Dynamic deduction: worse asymmetry = heavier penalty
+
+                            math_score -= min(35, int(asymmetry * 1.5))
+
+                            math_feedback = "Asymmetric Raise (Uneven Arms)"
+
+
+                        # Penalty D: Shrugging
+
+                        elif shrug_detected:
+
+                            math_score -= 30
+
+                            math_feedback = "Shrugging (Trapezius Compensation)"
+
+                        math_score = max(0, min(100, math_score))
+
+                        # ---------------------------------------------------------
+
+                        # 3. SENSOR FUSION (The Smart Blend)
+
+                        # ---------------------------------------------------------
+
+                        # If the math caught a blatant cheat, it takes 80% authority.
+
+                        if math_score < 75:
+
+                            final_score = int((0.20 * ai_score) + (0.80 * math_score))
+
+                            feedback = math_feedback
+
+                        else:
+
+                            # If math looks okay, blend 50/50 for a smooth, fair grade.
+
+                            final_score = int((0.50 * ai_score) + (0.50 * math_score))
+
+                            # Decide on the text label
+
+                            if ai_score < 80 and math_score >= 80:
+
+                                feedback = "Compensatory Motion Detected"
+
+                            else:
+
+                                feedback = math_feedback
+
+                        score = max(0, min(100, final_score))
+
+                        self.reps += 1
+
+                        log_entry = {"rep_num": self.reps, "score": score, "issue": feedback}
+
+                        self.session_log.append(log_entry)
+
+                        self.stats_update.emit({"reps": self.reps, "score": score, "feedback": feedback})
+
+                        speak_text = f"Rep {self.reps}."
+
+                        if feedback != "Excellent Form":
+                            speak_text += f" {feedback}."
+
+                        speak_async(speak_text)
+
+
+                    except Exception as e:
+
+                        print(f"Lateral Raise Inference Error: {e}")
+
+                    self.sts_stage = "WAITING"
+
+                    self.system_status.emit("RESETTING...", "#ffaa00")
+
                 return
 
             # Simple heuristic triggers
@@ -959,7 +1258,6 @@ class VisionWorker(QThread):
 
     def stop(self) -> None:
         self.running = False
-
 
     def _calculate_avg_score(self) -> int:
         if not self.session_log:
