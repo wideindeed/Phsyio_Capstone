@@ -1050,3 +1050,90 @@ input#pain_slider {
   text-align: right;
   letter-spacing: 0.3px;
 }
+
+:root {
+  --bg-nav:       #0F172A;
+  --accent-blue:  #0284C7;
+  --border-focus: #0284C7;
+  --radius-sm:    3px;
+  --radius-md:    4px;
+  --radius-lg:    8px;
+  --shadow-sm:    none;
+  --shadow-md:    none;
+  --shadow-lg:    none;
+}
+
+
+/* ── 2. DARK SIDEBAR ────────────────────────────────────────────────────────── */
+
+#sidebar {
+  border-right-color: rgba(255, 255, 255, 0.06);
+}
+
+/* Logo strip — more vertical breathing room */
+#sidebar .sidebar-logo {
+  padding: 28px 20px 24px;
+  border-bottom-color: rgba(255, 255, 255, 0.08);
+}
+#sidebar .logo-text { color: #F8FAFC; }
+#sidebar .logo-sub  { color: rgba(248, 250, 252, 0.42); }
+
+/* User strip */
+#sidebar .sidebar-user {
+  padding: 16px 20px;
+  border-bottom-color: rgba(255, 255, 255, 0.08);
+}
+#sidebar .user-name { color: #F8FAFC; }
+#sidebar .user-role { color: rgba(248, 250, 252, 0.42); }
+
+/* Nav items — wider padding + larger gap so icon and text breathe */
+#sidebar .sidebar-nav {
+  padding: 12px 10px;
+  gap: 3px;
+}
+#sidebar .nav-item {
+  padding: 10px 14px;
+  gap: 13px;
+  color: rgba(248, 250, 252, 0.52);
+}
+/* Slightly wider icon column so emoji don't crowd the label */
+#sidebar .nav-item .nav-icon {
+  width: 22px;
+  font-size: 15px;
+}
+#sidebar .nav-item:hover {
+  background: rgba(255, 255, 255, 0.07);
+  color: #F8FAFC;
+}
+#sidebar .nav-item.active {
+  background: rgba(2, 132, 199, 0.18);
+  color: #38BDF8;
+  font-weight: 600;
+}
+
+/* Settings button at the bottom */
+#sidebar .sidebar-bottom {
+  padding: 12px 10px;
+  border-top-color: rgba(255, 255, 255, 0.08);
+}
+
+
+/* ── 3. BUTTON HOVER CORRECTION ─────────────────────────────────────────────── */
+.btn-primary:hover { background: #0369A1; border-color: #0369A1; }
+
+.btn-secondary {
+  background: transparent;
+  color: var(--accent-blue);
+  border: 1px solid var(--accent-blue);
+}
+.btn-secondary:hover {
+  background: #E0F2FE;
+  border-color: #0369A1;
+  color: #0369A1;
+}
+
+
+/* ── 4. TOAST SHADOW RESTORATION ────────────────────────────────────────────── */
+.toast {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+}
