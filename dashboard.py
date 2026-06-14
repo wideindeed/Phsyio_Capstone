@@ -197,14 +197,15 @@ class HubPage(QWidget):
     exercise_selected = Signal(str)   # forwards to PhysioDashboard
 
     EXERCISES = [
-        ("squat",        "Deep Squat",        "Knee & hip mobility analysis",  "🦵", "available"),
-        ("sts",          "Sit to Stand",      "Geriatric fall-risk assessment", "🪑", "available"),
-        ("pushup",       "Pushup",            "Upper body & core stability",   "𓀒", "available"),
-        ("curl",         "Bicep Curl",        "Arm flexion & momentum analysis","💪", "available"),
-        ("shoulder",     "Shoulder Press",    "Upper limb biomechanics",       "🏋️", "coming_soon"),
-        ("balance",      "Balance Test",      "Static postural stability",     "⚖️", "coming_soon"),
-        ("hip_flex",     "Hip Flexion",       "ROM measurement & logging",     "🔄", "coming_soon"),
-        ("gait",         "Gait Analysis",     "Walking pattern & cadence",     "👣", "coming_soon"),
+        ("squat",        "Deep Squat",           "Knee & hip mobility analysis",        "🦵", "available"),
+        ("sts",          "Sit to Stand",         "Geriatric fall-risk assessment",      "🪑", "available"),
+        ("pushup",       "Pushup",               "Upper body & core stability",         "𓀒", "available"),
+        ("curl",         "Bicep Curl",           "Arm flexion & momentum analysis",     "💪", "available"),
+        ("knee_ext",     "Knee Extension",       "Quad strength & seated mobility",     "🦿", "available"),
+        ("wall_pushup",  "Wall Push-Up",         "Accessible upper body strength",      "🧱", "available"),
+        ("calf_raise",   "Calf Raise",           "Ankle mobility & balance recovery",   "🦶", "available"),
+        ("hip_march",    "Hip March",            "Hip flexor & core stability",         "🚶", "available"),
+        ("w_raise",      "W Raise",              "Scapular retraction & posture",       "🔱", "available"),
     ]
 
     def __init__(self, username: str, parent=None):
@@ -441,12 +442,17 @@ class AnalysisPage(QWidget):
 
     def _exercise_label(self) -> str:
         return {
-            "squat":    "Deep Squat Analysis",
-            "sts":      "Sit-to-Stand Analysis",
-            "pushup":   "Pushup Analysis",
-            "curl":     "Bicep Curl Analysis",
-            "lunge":    "Lunge Analysis",
-            "shoulder": "Shoulder Press Analysis",
+            "squat":       "Deep Squat Analysis",
+            "sts":         "Sit-to-Stand Analysis",
+            "pushup":      "Pushup Analysis",
+            "curl":        "Bicep Curl Analysis",
+            "knee_ext":    "Knee Extension Analysis",
+            "wall_pushup": "Wall Push-Up Analysis",
+            "calf_raise":  "Calf Raise Analysis",
+            "hip_march":   "Hip March Analysis",
+            "w_raise":     "W Raise Analysis",
+            "lunge":       "Lunge Analysis",
+            "shoulder":    "Shoulder Press Analysis",
         }.get(self.exercise_key, "Exercise Analysis")
 
     @staticmethod

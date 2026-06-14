@@ -6,7 +6,30 @@ import pyttsx3
 import math
 import os
 from datetime import datetime
-from keras.models import load_model
+from keras.models import load_model as _keras_load_model
+
+
+def load_model_safe(path):
+    """Version-safe model loader that handles Keras 2 vs 3 kwarg mismatches.
+
+    Models trained on Keras 3.x may contain config keys (quantization_config,
+    time_major) that Keras 2.x doesn't understand, and vice versa. This wrapper
+    tries a clean load first, then falls back to compile=False + manual recompile
+    which bypasses most deserialization issues.
+    """
+    try:
+        return _keras_load_model(path)
+    except TypeError as e:
+        # Keras 2/3 kwarg mismatch — load weights only, skip optimizer state
+        print(f"[Physio-Vision] Keras version mismatch for {os.path.basename(path)}, "
+              f"retrying with compile=False: {e}")
+        try:
+            model = _keras_load_model(path, compile=False)
+            model.compile(optimizer='adam', loss='mean_squared_error', metrics=['mae'])
+            return model
+        except Exception as e2:
+            print(f"[Physio-Vision] Fallback also failed: {e2}")
+            raise
 
 # --- Environment flags must be set BEFORE any AI/GPU imports ---
 os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
@@ -53,6 +76,26 @@ class AppState:
     PARAM_HEAD_ANGLE: float = 65.0            # Max head-to-torso angle before "Head Down" warning
     PARAM_CURL_DOWN_ANGLE: float = 150.0  # Arm fully extended
     PARAM_CURL_UP_ANGLE: float = 75.0  # Arm fully curled
+
+    # --- Knee Extension Thresholds ---
+    PARAM_KNEE_EXT_UP_ANGLE: float = 170.0     # Leg fully extended (kick out)
+    PARAM_KNEE_EXT_DOWN_ANGLE: float = 95.0    # Leg bent at ~90° in chair
+
+    # --- Wall Push-Up Thresholds ---
+    PARAM_WALL_PUSHUP_UP_ANGLE: float = 160.0  # Arms fully extended
+    PARAM_WALL_PUSHUP_DOWN_ANGLE: float = 100.0 # Arms flexed against wall
+
+    # --- Calf Raise Thresholds ---
+    PARAM_CALF_RAISE_UP_DISP: float = 0.03     # Y-displacement threshold for peak
+    PARAM_CALF_RAISE_DOWN_DISP: float = 0.01   # Y-displacement baseline
+
+    # --- Hip March Thresholds ---
+    PARAM_HIP_MARCH_UP_ANGLE: float = 65.0     # Hip flexion peak (knee pulled up)
+    PARAM_HIP_MARCH_DOWN_ANGLE: float = 95.0   # Relaxed seated angle
+
+    # --- W Raise Thresholds ---
+    PARAM_W_RAISE_UP: float = 0.15             # Hand above head threshold (relative)
+    PARAM_W_RAISE_DOWN: float = 0.05           # Hands at shoulder level (relative)
 
     # --- Session History (in-memory, not persisted) ---
     HISTORY: list = []
@@ -181,7 +224,7 @@ def is_profile_view(landmarks) -> bool:
 
 
 try:
-    STS_MODEL = load_model("sit_to_stand_robust.keras")
+    STS_MODEL = load_model_safe("sit_to_stand_robust.keras")
 except:
     STS_MODEL = None
     print("[Physio-Vision] WARNING: sit_to_stand_robust.keras not found.")
@@ -343,45 +386,70 @@ def speak_async(text: str) -> None:
 
     threading.Thread(target=_speak, daemon=True).start()
 
-
-
 try:
-    SQUAT_MODEL = load_model("deep_squat_robust.keras")
+    SQUAT_MODEL = load_model_safe("deep_squat_robust.keras")
+    print("[Physio-Vision] SUCCESS: Squat AI Model Loaded.")
 except:
     SQUAT_MODEL = None
-    print("WARNING: deep_squat_robust.keras not found.")
+    print("[Physio-Vision] WARNING: deep_squat_robust.keras not found.")
 
 try:
-    PUSHUP_MODEL = load_model("pushup_robust.keras")
+    PUSHUP_MODEL = load_model_safe("pushup_robust.keras")
+    print("[Physio-Vision] SUCCESS: Pushup AI Model Loaded.")
 except:
     PUSHUP_MODEL = None
-    print("WARNING: pushup_robust.keras not found.")
+    print("[Physio-Vision] WARNING: pushup_robust.keras not found.")
+
+# NOTE: STS_MODEL is already loaded above (line ~227). No duplicate needed.
 
 try:
-    STS_MODEL = load_model("sit_to_stand_robust.keras")
-except:
-    STS_MODEL = None
-    print("WARNING: sit_to_stand_robust.keras not found.")
-
-try:
-    import os
-    import tensorflow as tf  # <--- Bringing in the modern library!
-
-    # Force Python to look in the exact directory where this running script lives
     current_dir = os.path.dirname(os.path.abspath(__file__))
     target_model_path = os.path.join(current_dir, "bicep_curl_robust.keras")
-
     if os.path.exists(target_model_path):
-        # Using tf.keras instead of the old standalone keras
-        CURL_MODEL = tf.keras.models.load_model(target_model_path)
-        print("[Physio-Vision] SUCCESS: Bicep Curl AI Model Loaded via Absolute Path.")
+        CURL_MODEL = load_model_safe(target_model_path)
+        print("[Physio-Vision] SUCCESS: Bicep Curl AI Model Loaded.")
     else:
         CURL_MODEL = None
         print(f"[Physio-Vision] WARNING: Model file not found at {target_model_path}")
-
 except Exception as e:
     CURL_MODEL = None
     print(f"[Physio-Vision] ERROR loading Bicep Curl model: {e}")
+
+# --- NEW EXERCISE MODELS ---
+# Uses load_model_safe() to handle Keras 2/3 version mismatches gracefully.
+# Calf Raise is intentionally omitted — it uses rule-based scoring (no ML model)
+# because the UI-PRMD "STS" dataset is biomechanically different from calf raises.
+
+try:
+    KNEE_EXT_MODEL = load_model_safe(os.path.join(os.path.dirname(os.path.abspath(__file__)), "knee_extension_robust.keras"))
+    print("[Physio-Vision] SUCCESS: Knee Extension AI Model Loaded.")
+except Exception:
+    KNEE_EXT_MODEL = None
+    print("[Physio-Vision] WARNING: knee_extension_robust.keras not found.")
+
+try:
+    WALL_PUSHUP_MODEL = load_model_safe(os.path.join(os.path.dirname(os.path.abspath(__file__)), "wall_pushup_robust.keras"))
+    print("[Physio-Vision] SUCCESS: Wall Push-Up AI Model Loaded.")
+except Exception:
+    WALL_PUSHUP_MODEL = None
+    print("[Physio-Vision] WARNING: wall_pushup_robust.keras not found.")
+
+# NOTE: No CALF_RAISE_MODEL — uses rule-based scoring (see process_logic)
+print("[Physio-Vision] INFO: Calf Raise uses rule-based scoring (no ML model needed).")
+
+try:
+    HIP_MARCH_MODEL = load_model_safe(os.path.join(os.path.dirname(os.path.abspath(__file__)), "hip_march_robust.keras"))
+    print("[Physio-Vision] SUCCESS: Hip March AI Model Loaded.")
+except Exception:
+    HIP_MARCH_MODEL = None
+    print("[Physio-Vision] WARNING: hip_march_robust.keras not found.")
+
+try:
+    W_RAISE_MODEL = load_model_safe(os.path.join(os.path.dirname(os.path.abspath(__file__)), "w_raise_robust.keras"))
+    print("[Physio-Vision] SUCCESS: W Raise AI Model Loaded.")
+except Exception:
+    W_RAISE_MODEL = None
+    print("[Physio-Vision] WARNING: w_raise_robust.keras not found.")
 
 
 # --- 2. NORMALIZATION FUNCTIONS ---
@@ -450,6 +518,56 @@ def normalize_skeleton_curl_live(frames_list):
     data = data / np.maximum(torso_length, 0.0001)
 
     return data.reshape(1, 40, 99)
+
+def normalize_skeleton_knee_ext_live(frames_list):
+    """Knee Extension Normalizer: 63 frames, scales by Pelvis Width"""
+    data = np.array(frames_list).reshape(1, 63, 22, 3)
+    root = data[:, :, 0:1, :]
+    data = data - root
+    left_hip, right_hip = data[:, :, 18:19, :], data[:, :, 14:15, :]
+    pelvis_width = np.linalg.norm(left_hip - right_hip, axis=3, keepdims=True)
+    data = data / np.maximum(pelvis_width, 0.0001)
+    return data.reshape(1, 63, 66)
+
+def normalize_skeleton_wall_pushup_live(frames_list):
+    """Wall Push-Up Normalizer: 77 frames, scales by Pelvis Width"""
+    data = np.array(frames_list).reshape(1, 77, 22, 3)
+    root = data[:, :, 0:1, :]
+    data = data - root
+    left_hip, right_hip = data[:, :, 18:19, :], data[:, :, 14:15, :]
+    pelvis_width = np.linalg.norm(left_hip - right_hip, axis=3, keepdims=True)
+    data = data / np.maximum(pelvis_width, 0.0001)
+    return data.reshape(1, 77, 66)
+
+def normalize_skeleton_calf_raise_live(frames_list):
+    """Calf Raise Normalizer: 88 frames, scales by Pelvis Width"""
+    data = np.array(frames_list).reshape(1, 88, 22, 3)
+    root = data[:, :, 0:1, :]
+    data = data - root
+    left_hip, right_hip = data[:, :, 18:19, :], data[:, :, 14:15, :]
+    pelvis_width = np.linalg.norm(left_hip - right_hip, axis=3, keepdims=True)
+    data = data / np.maximum(pelvis_width, 0.0001)
+    return data.reshape(1, 88, 66)
+
+def normalize_skeleton_hip_march_live(frames_list):
+    """Hip March Normalizer: 69 frames, scales by Pelvis Width"""
+    data = np.array(frames_list).reshape(1, 69, 22, 3)
+    root = data[:, :, 0:1, :]
+    data = data - root
+    left_hip, right_hip = data[:, :, 18:19, :], data[:, :, 14:15, :]
+    pelvis_width = np.linalg.norm(left_hip - right_hip, axis=3, keepdims=True)
+    data = data / np.maximum(pelvis_width, 0.0001)
+    return data.reshape(1, 69, 66)
+
+def normalize_skeleton_w_raise_live(frames_list):
+    """W Raise Normalizer: 74 frames, scales by Pelvis Width"""
+    data = np.array(frames_list).reshape(1, 74, 22, 3)
+    root = data[:, :, 0:1, :]
+    data = data - root
+    left_hip, right_hip = data[:, :, 18:19, :], data[:, :, 14:15, :]
+    pelvis_width = np.linalg.norm(left_hip - right_hip, axis=3, keepdims=True)
+    data = data / np.maximum(pelvis_width, 0.0001)
+    return data.reshape(1, 74, 66)
 
 def apply_mirror_matrix(landmarks):
     """Swaps left/right body parts and inverts X to undo the webcam mirror effect."""
@@ -587,7 +705,7 @@ class VisionWorker(QThread):
         # STATE 0: PROFILE CALIBRATION
         # ==========================================
         if self.current_state == self.STATE_CALIB:
-            if self.exercise_mode == "pushup":
+            if self.exercise_mode in ("pushup", "wall_pushup", "w_raise"):
                 self.current_state = self.STATE_SESSION
                 speak_async("System Ready.")
             elif not is_profile_view(landmarks_2d):
@@ -830,6 +948,476 @@ class VisionWorker(QThread):
                     except Exception as e:
                         print(f"Curl AI Inference Error: {e}")
 
+                    self.sts_stage = "WAITING"
+                    self.system_status.emit("RESETTING...", "#ffaa00")
+                return
+
+            # ============================================================
+            # NEW EXERCISES: Regression-Based (Pelvis-Anchored Pipeline)
+            # ============================================================
+            # These exercises share the same pipeline:
+            #   1. Track a trigger angle/displacement
+            #   2. FSM: WAITING → HOLDING → RECORDING → INFERENCE
+            #   3. Time-warp to target frames
+            #   4. Pelvis-anchor normalize
+            #   5. Run regression model (0-1 score)
+            # ============================================================
+
+            if self.exercise_mode == "knee_ext":
+                # Track knee angle (hip → knee → ankle)
+                knee_angle_right = calculate_angle_3d(landmarks_3d[24], landmarks_3d[26], landmarks_3d[28])
+                knee_angle_left = calculate_angle_3d(landmarks_3d[23], landmarks_3d[25], landmarks_3d[27])
+                active_knee = min(knee_angle_right, knee_angle_left)  # Use the active leg
+
+                is_extended = active_knee > state.PARAM_KNEE_EXT_UP_ANGLE
+                is_bent = active_knee < state.PARAM_KNEE_EXT_DOWN_ANGLE
+
+                if self.sts_stage == "WAITING":
+                    if is_bent:
+                        self.sts_stage = "HOLDING"
+                        self.sts_timer = time.time()
+                        self.system_status.emit("SIT STILL — KNEES BENT...", "#ffaa00")
+
+                elif self.sts_stage == "HOLDING":
+                    if not is_bent:
+                        self.sts_stage = "WAITING"
+                        self.system_status.emit("SIT WITH KNEES BENT", "#ffaa00")
+                    elif time.time() - self.sts_timer > 1.5:
+                        self.sts_stage = "RECORDING"
+                        self.sts_buffer = []
+                        self.hit_bottom = False
+                        self.system_status.emit("● RECORDING (EXTEND LEG)", "#ff4444")
+                        speak_async("Extend your leg.")
+
+                elif self.sts_stage == "RECORDING":
+                    self.sts_buffer.append(extract_prmd_features(landmarks_3d))
+
+                    # Symbolic fault: Slouching check
+                    def ext(idx):
+                        return np.array([landmarks_3d[idx].x, landmarks_3d[idx].y, landmarks_3d[idx].z])
+                    mid_sh = (ext(11) + ext(12)) / 2
+                    mid_hp = (ext(23) + ext(24)) / 2
+                    spine_v = mid_sh - mid_hp
+                    vert = np.array([0, 1, 0])
+                    spine_ang = float(np.degrees(np.arccos(np.clip(
+                        np.dot(spine_v / (np.linalg.norm(spine_v) + 1e-6), vert), -1, 1))))
+                    if abs(180 - spine_ang) > 45 and not hasattr(self, 'current_rep_issues'):
+                        self.current_rep_issues = "Slouching / Thoracic Collapse"
+
+                    if is_extended:
+                        self.hit_bottom = True
+                    if getattr(self, 'hit_bottom', False) and is_bent:
+                        self.sts_stage = "INFERENCE"
+                        self.system_status.emit("ANALYZING AI...", "#0099ff")
+
+                    if len(self.sts_buffer) > 200:
+                        self.sts_stage = "WAITING"
+                        self.system_status.emit("TIMEOUT. RESETTING.", "#ffaa00")
+
+                elif self.sts_stage == "INFERENCE":
+                    try:
+                        import cv2
+                        raw_frames = np.array(self.sts_buffer, dtype=np.float32)
+                        warped_frames = cv2.resize(raw_frames, (66, 63), interpolation=cv2.INTER_LINEAR)
+                        if KNEE_EXT_MODEL:
+                            normalized = normalize_skeleton_knee_ext_live(warped_frames)
+                            prediction = KNEE_EXT_MODEL.predict(normalized, verbose=0)[0][0]
+                        else:
+                            prediction = 0.85
+                        self.reps += 1
+                        raw_min, raw_max = 0.60, 0.96
+                        score = int(max(0, min(100, ((prediction - raw_min) / (raw_max - raw_min)) * 100)))
+                        feedback = "Excellent Form"
+                        if hasattr(self, 'current_rep_issues'):
+                            feedback = self.current_rep_issues
+                            del self.current_rep_issues
+                        elif score < 80:
+                            feedback = "Incomplete Extension"
+                        log_entry = {"rep_num": self.reps, "score": score, "issue": feedback}
+                        self.session_log.append(log_entry)
+                        self.stats_update.emit({"reps": self.reps, "score": score, "feedback": feedback})
+                        speak_text = f"Rep {self.reps}."
+                        if feedback != "Excellent Form":
+                            speak_text += f" {feedback}."
+                        speak_async(speak_text)
+                    except Exception as e:
+                        print(f"Knee Extension AI Inference Error: {e}")
+                    self.sts_stage = "WAITING"
+                    self.system_status.emit("RESETTING...", "#ffaa00")
+                return
+
+            if self.exercise_mode == "wall_pushup":
+                # Track elbow angle (shoulder → elbow → wrist)
+                left_elbow_angle = calculate_angle_3d(landmarks_3d[11], landmarks_3d[13], landmarks_3d[15])
+                right_elbow_angle = calculate_angle_3d(landmarks_3d[12], landmarks_3d[14], landmarks_3d[16])
+                elbow_angle = min(left_elbow_angle, right_elbow_angle)
+
+                is_up = elbow_angle > state.PARAM_WALL_PUSHUP_UP_ANGLE
+                is_down = elbow_angle < state.PARAM_WALL_PUSHUP_DOWN_ANGLE
+
+                if self.sts_stage == "WAITING":
+                    if is_up:
+                        self.sts_stage = "HOLDING"
+                        self.sts_timer = time.time()
+                        self.system_status.emit("ARMS EXTENDED — HOLD...", "#ffaa00")
+
+                elif self.sts_stage == "HOLDING":
+                    if not is_up:
+                        self.sts_stage = "WAITING"
+                        self.system_status.emit("STAND FACING WALL, ARMS OUT", "#ffaa00")
+                    elif time.time() - self.sts_timer > 1.0:
+                        self.sts_stage = "RECORDING"
+                        self.sts_buffer = []
+                        self.hit_bottom = False
+                        self.system_status.emit("● RECORDING (LEAN IN)", "#ff4444")
+                        speak_async("Begin.")
+
+                elif self.sts_stage == "RECORDING":
+                    self.sts_buffer.append(extract_prmd_features(landmarks_3d))
+
+                    # Symbolic fault: Hip sag (adapt from pushup)
+                    penalty, issues = analyze_pushup_form_3d(landmarks_3d, elbow_angle)
+                    if issues and not hasattr(self, 'current_rep_issues'):
+                        self.current_rep_issues = issues[0]
+
+                    if is_down:
+                        self.hit_bottom = True
+                    if getattr(self, 'hit_bottom', False) and is_up:
+                        self.sts_stage = "INFERENCE"
+                        self.system_status.emit("ANALYZING AI...", "#0099ff")
+
+                    if len(self.sts_buffer) > 300:
+                        self.sts_stage = "WAITING"
+                        self.system_status.emit("TIMEOUT. RESETTING.", "#ffaa00")
+
+                elif self.sts_stage == "INFERENCE":
+                    try:
+                        import cv2
+                        raw_frames = np.array(self.sts_buffer, dtype=np.float32)
+                        warped_frames = cv2.resize(raw_frames, (66, 77), interpolation=cv2.INTER_LINEAR)
+                        if WALL_PUSHUP_MODEL:
+                            normalized = normalize_skeleton_wall_pushup_live(warped_frames)
+                            prediction = WALL_PUSHUP_MODEL.predict(normalized, verbose=0)[0][0]
+                        else:
+                            prediction = 0.85
+                        self.reps += 1
+                        raw_min, raw_max = 0.60, 0.96
+                        score = int(max(0, min(100, ((prediction - raw_min) / (raw_max - raw_min)) * 100)))
+                        feedback = "Excellent Form"
+                        if hasattr(self, 'current_rep_issues'):
+                            feedback = self.current_rep_issues
+                            del self.current_rep_issues
+                        elif score < 80:
+                            feedback = "Keep Body Straight"
+                        log_entry = {"rep_num": self.reps, "score": score, "issue": feedback}
+                        self.session_log.append(log_entry)
+                        self.stats_update.emit({"reps": self.reps, "score": score, "feedback": feedback})
+                        speak_text = f"Rep {self.reps}."
+                        if feedback != "Excellent Form":
+                            speak_text += f" {feedback}."
+                        speak_async(speak_text)
+                    except Exception as e:
+                        print(f"Wall Push-Up AI Inference Error: {e}")
+                    self.sts_stage = "WAITING"
+                    self.system_status.emit("RESETTING...", "#ffaa00")
+                return
+
+            if self.exercise_mode == "calf_raise":
+                # Track vertical displacement of mid_hip and mid_ankle
+                def ext(idx):
+                    return np.array([landmarks_3d[idx].x, landmarks_3d[idx].y, landmarks_3d[idx].z])
+                mid_hip_pt = (ext(23) + ext(24)) / 2
+                mid_ankle_pt = (ext(27) + ext(28)) / 2
+
+                if not hasattr(self, 'calf_baseline_y'):
+                    self.calf_baseline_y = mid_hip_pt[1]
+
+                y_disp = abs(mid_hip_pt[1] - self.calf_baseline_y)
+                # Also check knee angle for cheat detection
+                knee_angle_check = calculate_angle_3d(landmarks_3d[23], landmarks_3d[25], landmarks_3d[27])
+
+                is_up = y_disp > state.PARAM_CALF_RAISE_UP_DISP
+                is_down = y_disp < state.PARAM_CALF_RAISE_DOWN_DISP
+
+                if self.sts_stage == "WAITING":
+                    self.calf_baseline_y = mid_hip_pt[1]  # Reset baseline
+                    if is_down:  # Standing still
+                        self.sts_stage = "HOLDING"
+                        self.sts_timer = time.time()
+                        self.system_status.emit("STAND STILL — HEELS DOWN...", "#ffaa00")
+
+                elif self.sts_stage == "HOLDING":
+                    if is_up:  # Moved too early
+                        self.sts_stage = "WAITING"
+                        self.system_status.emit("STAND STILL WITH FLAT FEET", "#ffaa00")
+                    elif time.time() - self.sts_timer > 1.5:
+                        self.sts_stage = "RECORDING"
+                        self.sts_buffer = []
+                        self.hit_bottom = False
+                        self.system_status.emit("● RECORDING (RISE UP)", "#ff4444")
+                        speak_async("Rise up on your toes.")
+
+                elif self.sts_stage == "RECORDING":
+                    self.sts_buffer.append(extract_prmd_features(landmarks_3d))
+
+                    # Symbolic fault: Knee bending cheat
+                    if knee_angle_check < 165 and not hasattr(self, 'current_rep_issues'):
+                        self.current_rep_issues = "Keep Knees Straight"
+
+                    if is_up:
+                        self.hit_bottom = True
+                    if getattr(self, 'hit_bottom', False) and is_down:
+                        self.sts_stage = "INFERENCE"
+                        self.system_status.emit("ANALYZING AI...", "#0099ff")
+
+                    if len(self.sts_buffer) > 200:
+                        self.sts_stage = "WAITING"
+                        self.system_status.emit("TIMEOUT. RESETTING.", "#ffaa00")
+
+                elif self.sts_stage == "INFERENCE":
+                    # ── RULE-BASED SCORING (no ML model) ──
+                    # Calf raise form is scored directly from landmark geometry.
+                    # This avoids the STS↔Calf Raise dataset mismatch entirely.
+                    try:
+                        score = 100
+                        feedback = "Excellent Form"
+                        penalties = []
+
+                        # Analyze the recorded buffer frame-by-frame
+                        frames = self.sts_buffer
+                        n_frames = len(frames)
+
+                        # Metric 1: Knee bend cheat (already caught live, but re-check avg)
+                        if hasattr(self, 'current_rep_issues'):
+                            feedback = self.current_rep_issues
+                            del self.current_rep_issues
+                            score -= 25
+
+                        # Metric 2: Rep duration quality (too fast = sloppy)
+                        if n_frames < 15:
+                            penalties.append("Too Fast")
+                            score -= 20
+
+                        # Metric 3: Peak displacement (higher = stronger raise)
+                        if n_frames > 0:
+                            # Measure peak Y-displacement from first frame
+                            first_frame = np.array(frames[0]).reshape(22, 3)
+                            baseline_hip_y = (first_frame[23][1] + first_frame[24][1]) / 2
+                            peak_disp = 0.0
+                            for f in frames:
+                                f_arr = np.array(f).reshape(22, 3)
+                                hip_y = (f_arr[23][1] + f_arr[24][1]) / 2
+                                disp = abs(hip_y - baseline_hip_y)
+                                peak_disp = max(peak_disp, disp)
+
+                            # Weak raise = small displacement
+                            if peak_disp < 0.015:
+                                penalties.append("Shallow Raise")
+                                score -= 15
+
+                        # Metric 4: Trunk lean check (shoulders should stay over hips)
+                        if n_frames > 5:
+                            mid_idx = n_frames // 2
+                            mid_f = np.array(frames[mid_idx]).reshape(22, 3)
+                            mid_sh = (mid_f[11] + mid_f[12]) / 2
+                            mid_hp = (mid_f[23] + mid_f[24]) / 2
+                            trunk_lean = abs(mid_sh[2] - mid_hp[2])  # Z-axis lean
+                            if trunk_lean > 0.12:
+                                penalties.append("Trunk Leaning")
+                                score -= 15
+
+                        # Final
+                        self.reps += 1
+                        score = max(0, min(100, score))
+                        if penalties and feedback == "Excellent Form":
+                            feedback = penalties[0]  # Show the first detected issue
+
+                        log_entry = {"rep_num": self.reps, "score": score, "issue": feedback}
+                        self.session_log.append(log_entry)
+                        self.stats_update.emit({"reps": self.reps, "score": score, "feedback": feedback})
+                        speak_text = f"Rep {self.reps}."
+                        if feedback != "Excellent Form":
+                            speak_text += f" {feedback}."
+                        speak_async(speak_text)
+                    except Exception as e:
+                        print(f"Calf Raise Rule-Based Scoring Error: {e}")
+                    self.sts_stage = "WAITING"
+                    if hasattr(self, 'calf_baseline_y'):
+                        del self.calf_baseline_y
+                    self.system_status.emit("RESETTING...", "#ffaa00")
+                return
+
+            if self.exercise_mode == "hip_march":
+                # Track hip flexion angle (shoulder → hip → knee)
+                hip_angle_right = calculate_angle_3d(landmarks_3d[12], landmarks_3d[24], landmarks_3d[26])
+                hip_angle_left = calculate_angle_3d(landmarks_3d[11], landmarks_3d[23], landmarks_3d[25])
+                active_hip = min(hip_angle_right, hip_angle_left)
+
+                is_marched = active_hip < state.PARAM_HIP_MARCH_UP_ANGLE
+                is_resting = active_hip > state.PARAM_HIP_MARCH_DOWN_ANGLE
+
+                if self.sts_stage == "WAITING":
+                    if is_resting:
+                        self.sts_stage = "HOLDING"
+                        self.sts_timer = time.time()
+                        self.system_status.emit("SIT STILL — FEET DOWN...", "#ffaa00")
+
+                elif self.sts_stage == "HOLDING":
+                    if not is_resting:
+                        self.sts_stage = "WAITING"
+                        self.system_status.emit("SIT WITH FEET FLAT", "#ffaa00")
+                    elif time.time() - self.sts_timer > 1.5:
+                        self.sts_stage = "RECORDING"
+                        self.sts_buffer = []
+                        self.hit_bottom = False
+                        self.system_status.emit("● RECORDING (LIFT KNEE)", "#ff4444")
+                        speak_async("Lift your knee.")
+
+                elif self.sts_stage == "RECORDING":
+                    self.sts_buffer.append(extract_prmd_features(landmarks_3d))
+
+                    # Symbolic fault: Trunk recline / lean back
+                    def ext_hip(idx):
+                        return np.array([landmarks_3d[idx].x, landmarks_3d[idx].y, landmarks_3d[idx].z])
+                    mid_sh = (ext_hip(11) + ext_hip(12)) / 2
+                    mid_hp = (ext_hip(23) + ext_hip(24)) / 2
+                    spine_v = mid_sh - mid_hp
+                    vert = np.array([0, 1, 0])
+                    spine_ang = float(np.degrees(np.arccos(np.clip(
+                        np.dot(spine_v / (np.linalg.norm(spine_v) + 1e-6), vert), -1, 1))))
+                    if abs(180 - spine_ang) > 50 and not hasattr(self, 'current_rep_issues'):
+                        self.current_rep_issues = "Don't Lean Back"
+
+                    if is_marched:
+                        self.hit_bottom = True
+                    if getattr(self, 'hit_bottom', False) and is_resting:
+                        self.sts_stage = "INFERENCE"
+                        self.system_status.emit("ANALYZING AI...", "#0099ff")
+
+                    if len(self.sts_buffer) > 200:
+                        self.sts_stage = "WAITING"
+                        self.system_status.emit("TIMEOUT. RESETTING.", "#ffaa00")
+
+                elif self.sts_stage == "INFERENCE":
+                    try:
+                        import cv2
+                        raw_frames = np.array(self.sts_buffer, dtype=np.float32)
+                        warped_frames = cv2.resize(raw_frames, (66, 69), interpolation=cv2.INTER_LINEAR)
+                        if HIP_MARCH_MODEL:
+                            normalized = normalize_skeleton_hip_march_live(warped_frames)
+                            prediction = HIP_MARCH_MODEL.predict(normalized, verbose=0)[0][0]
+                        else:
+                            prediction = 0.85
+                        self.reps += 1
+                        raw_min, raw_max = 0.60, 0.96
+                        score = int(max(0, min(100, ((prediction - raw_min) / (raw_max - raw_min)) * 100)))
+                        feedback = "Excellent Form"
+                        if hasattr(self, 'current_rep_issues'):
+                            feedback = self.current_rep_issues
+                            del self.current_rep_issues
+                        elif score < 80:
+                            feedback = "Shallow March (Weak Flexion)"
+                        log_entry = {"rep_num": self.reps, "score": score, "issue": feedback}
+                        self.session_log.append(log_entry)
+                        self.stats_update.emit({"reps": self.reps, "score": score, "feedback": feedback})
+                        speak_text = f"Rep {self.reps}."
+                        if feedback != "Excellent Form":
+                            speak_text += f" {feedback}."
+                        speak_async(speak_text)
+                    except Exception as e:
+                        print(f"Hip March AI Inference Error: {e}")
+                    self.sts_stage = "WAITING"
+                    self.system_status.emit("RESETTING...", "#ffaa00")
+                return
+
+            if self.exercise_mode == "w_raise":
+                # Track hand elevation relative to head
+                def ext_wr(idx):
+                    return np.array([landmarks_3d[idx].x, landmarks_3d[idx].y, landmarks_3d[idx].z])
+                l_hand, r_hand = ext_wr(15), ext_wr(16)
+                head = ext_wr(0)
+                l_elbow, r_elbow = ext_wr(13), ext_wr(14)
+                l_shoulder, r_shoulder = ext_wr(11), ext_wr(12)
+
+                # "Up" = hands above head, "Down" = elbows at shoulder level
+                l_elbow_angle = calculate_angle_3d(landmarks_3d[11], landmarks_3d[13], landmarks_3d[15])
+                r_elbow_angle = calculate_angle_3d(landmarks_3d[12], landmarks_3d[14], landmarks_3d[16])
+
+                # Start/Up: hands above head level (V shape)
+                hands_up = (l_hand[1] < head[1]) and (r_hand[1] < head[1])  # MediaPipe Y is inverted in world
+                # End/Down: elbows drop to shoulder level, ~90° angle
+                elbows_down = l_elbow_angle < 110 and r_elbow_angle < 110
+
+                if self.sts_stage == "WAITING":
+                    if hands_up:
+                        self.sts_stage = "HOLDING"
+                        self.sts_timer = time.time()
+                        self.system_status.emit("ARMS UP — HOLD V SHAPE...", "#ffaa00")
+
+                elif self.sts_stage == "HOLDING":
+                    if not hands_up:
+                        self.sts_stage = "WAITING"
+                        self.system_status.emit("RAISE ARMS OVERHEAD", "#ffaa00")
+                    elif time.time() - self.sts_timer > 1.0:
+                        self.sts_stage = "RECORDING"
+                        self.sts_buffer = []
+                        self.hit_bottom = False
+                        self.system_status.emit("● RECORDING (PULL DOWN TO W)", "#ff4444")
+                        speak_async("Pull down to W shape.")
+
+                elif self.sts_stage == "RECORDING":
+                    self.sts_buffer.append(extract_prmd_features(landmarks_3d))
+
+                    # Symbolic fault: Asymmetric pulling
+                    l_elb_y = landmarks_3d[13].y
+                    r_elb_y = landmarks_3d[14].y
+                    if abs(l_elb_y - r_elb_y) > 0.05 and not hasattr(self, 'current_rep_issues'):
+                        self.current_rep_issues = "Pull Evenly on Both Sides"
+
+                    # Symbolic fault: Forward head
+                    nose_pt = ext_wr(0)
+                    mid_sh_pt = (ext_wr(11) + ext_wr(12)) / 2
+                    if abs(nose_pt[2] - mid_sh_pt[2]) > 0.15 and not hasattr(self, 'current_rep_issues'):
+                        self.current_rep_issues = "Forward Head Jutting"
+
+                    if elbows_down:
+                        self.hit_bottom = True
+                    if getattr(self, 'hit_bottom', False) and hands_up:
+                        self.sts_stage = "INFERENCE"
+                        self.system_status.emit("ANALYZING AI...", "#0099ff")
+
+                    if len(self.sts_buffer) > 200:
+                        self.sts_stage = "WAITING"
+                        self.system_status.emit("TIMEOUT. RESETTING.", "#ffaa00")
+
+                elif self.sts_stage == "INFERENCE":
+                    try:
+                        import cv2
+                        raw_frames = np.array(self.sts_buffer, dtype=np.float32)
+                        warped_frames = cv2.resize(raw_frames, (66, 74), interpolation=cv2.INTER_LINEAR)
+                        if W_RAISE_MODEL:
+                            normalized = normalize_skeleton_w_raise_live(warped_frames)
+                            prediction = W_RAISE_MODEL.predict(normalized, verbose=0)[0][0]
+                        else:
+                            prediction = 0.85
+                        self.reps += 1
+                        raw_min, raw_max = 0.60, 0.96
+                        score = int(max(0, min(100, ((prediction - raw_min) / (raw_max - raw_min)) * 100)))
+                        feedback = "Excellent Form"
+                        if hasattr(self, 'current_rep_issues'):
+                            feedback = self.current_rep_issues
+                            del self.current_rep_issues
+                        elif score < 80:
+                            feedback = "Asymmetric Pulling"
+                        log_entry = {"rep_num": self.reps, "score": score, "issue": feedback}
+                        self.session_log.append(log_entry)
+                        self.stats_update.emit({"reps": self.reps, "score": score, "feedback": feedback})
+                        speak_text = f"Rep {self.reps}."
+                        if feedback != "Excellent Form":
+                            speak_text += f" {feedback}."
+                        speak_async(speak_text)
+                    except Exception as e:
+                        print(f"W Raise AI Inference Error: {e}")
                     self.sts_stage = "WAITING"
                     self.system_status.emit("RESETTING...", "#ffaa00")
                 return
