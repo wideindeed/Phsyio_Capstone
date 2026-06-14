@@ -19,6 +19,10 @@ from PyQt5.QtGui import QImage
 from mediapipe.python.solutions import pose as mp_pose
 from mediapipe.python.solutions import drawing_utils as mp_drawing
 
+from knee_extension_analyzer import KneeExtensionAnalyzer, set_model as set_knee_model
+from wall_pushup_analyzer    import WallPushupAnalyzer,    set_model as set_wall_model
+from hip_march_analyzer      import HipMarchAnalyzer,      set_model as set_hip_model
+
 
 # =============================================================================
 #  GLOBAL STATE & TUNING PARAMETERS
@@ -395,7 +399,7 @@ except Exception as e:
 
 try:
     current_dir = os.path.dirname(os.path.abspath(__file__))
-    target_model_path = os.path.join(current_dir, "lateral_raise.keras")
+    target_model_path = os.path.join(current_dir, "w_raise_robust.keras")
 
     if os.path.exists(target_model_path):
         LATERAL_RAISE_MODEL = tf.keras.models.load_model(target_model_path)
@@ -407,6 +411,42 @@ try:
 except Exception as e:
     LATERAL_RAISE_MODEL = None
     print(f"[Physio-Vision] ERROR loading Lateral Raise model: {e}")
+
+try:
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    _path = os.path.join(current_dir, "knee_extension_robust.keras")
+    if os.path.exists(_path):
+        _m = tf.keras.models.load_model(_path)
+        set_knee_model(_m)
+        print("[Physio-Vision] SUCCESS: Knee Extension model loaded.")
+    else:
+        print(f"[Physio-Vision] WARNING: knee_extension_robust.keras not found.")
+except Exception as e:
+    print(f"[Physio-Vision] ERROR loading Knee Extension model: {e}")
+
+try:
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    _path = os.path.join(current_dir, "wall_pushup_robust.keras")
+    if os.path.exists(_path):
+        _m = tf.keras.models.load_model(_path)
+        set_wall_model(_m)
+        print("[Physio-Vision] SUCCESS: Wall Push-Up model loaded.")
+    else:
+        print(f"[Physio-Vision] WARNING: wall_pushup_robust.keras not found.")
+except Exception as e:
+    print(f"[Physio-Vision] ERROR loading Wall Push-Up model: {e}")
+
+try:
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    _path = os.path.join(current_dir, "hip_march_robust.keras")
+    if os.path.exists(_path):
+        _m = tf.keras.models.load_model(_path)
+        set_hip_model(_m)
+        print("[Physio-Vision] SUCCESS: Hip March model loaded.")
+    else:
+        print(f"[Physio-Vision] WARNING: hip_march_robust.keras not found.")
+except Exception as e:
+    print(f"[Physio-Vision] ERROR loading Hip March model: {e}")
 
 
 # --- 2. NORMALIZATION FUNCTIONS ---
@@ -547,6 +587,9 @@ class VisionWorker(QThread):
         self.running = False
         self.exercise_mode = "squat"  # Default, UI will change this
         self.pose = mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5)
+        self._knee_analyzer  = KneeExtensionAnalyzer()
+        self._wall_analyzer  = WallPushupAnalyzer()
+        self._hip_analyzer   = HipMarchAnalyzer()
         self.current_state = self.STATE_CALIB
         self.reset_session()
 
@@ -572,15 +615,19 @@ class VisionWorker(QThread):
         self.lr_min_shrug = 1.0
         self._lr_frame_count = 0
 
+        self._knee_analyzer.reset()
+        self._wall_analyzer.reset()
+        self._hip_analyzer.reset()
+
     # ------------------------------------------------------------------
     # Main loop
     # ------------------------------------------------------------------
     def run(self) -> None:
         # Use CAP_DSHOW on Windows to fix instant-crash / black screen issues
         if os.name == 'nt':
-            self.cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+            self.cap = cv2.VideoCapture(1, cv2.CAP_DSHOW)
         else:
-            self.cap = cv2.VideoCapture(0)
+            self.cap = cv2.VideoCapture(1)
 
         # ── THE BUG FIX: Check if camera actually opened ──
         if not self.cap.isOpened():
@@ -652,7 +699,8 @@ class VisionWorker(QThread):
         # STATE 0: PROFILE CALIBRATION
         # ==========================================
         if self.current_state == self.STATE_CALIB:
-            if self.exercise_mode in ("pushup", "lateral_raise"):
+            if self.exercise_mode in ("pushup", "lateral_raise",
+                                      "knee_extension", "wall_pushup", "hip_march"):
                 self.current_state = self.STATE_SESSION
                 speak_async("System Ready.")
             elif not is_profile_view(landmarks_2d):
@@ -1133,6 +1181,18 @@ class VisionWorker(QThread):
 
                     self.system_status.emit("RESETTING...", "#ffaa00")
 
+                return
+
+            if self.exercise_mode == "knee_extension":
+                self._knee_analyzer.process(landmarks_3d, self)
+                return
+
+            if self.exercise_mode == "wall_pushup":
+                self._wall_analyzer.process(landmarks_3d, self)
+                return
+
+            if self.exercise_mode == "hip_march":
+                self._hip_analyzer.process(landmarks_3d, self)
                 return
 
             # Simple heuristic triggers

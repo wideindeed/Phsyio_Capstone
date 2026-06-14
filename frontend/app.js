@@ -56,12 +56,14 @@ let _cachedRecords = [];
 // Exercise catalogue
 // ---------------------------------------------------------------------------
 const EXERCISES = [
-  { key: "squat",  title: "Deep Squat",    desc: "Knee & hip mobility analysis",      icon: "🦵" },
-  { key: "sts",    title: "Sit to Stand",  desc: "Geriatric fall-risk assessment",     icon: "🪑" },
-  { key: "pushup", title: "Push-up",       desc: "Upper body & core stabilisation",    icon: "💪" },
-  { key: "curl",   title: "Bicep Curl",    desc: "Elbow ROM & cheat classification",   icon: "🏋️" },
-  { key: "lateral_raise", title: "Lateral Raise", desc: "Shoulder abduction & symmetry analysis", icon: "🙆" },
-  { key: "lateral_raise", title: "Lateral Raise", desc: "Shoulder abduction & cheat classification", icon: "🙆" },
+  { key: "squat",           title: "Deep Squat",    desc: "Knee & hip mobility analysis",                    icon: "🦵" },
+  { key: "sts",             title: "Sit to Stand",  desc: "Geriatric fall-risk assessment",                  icon: "🪑" },
+  { key: "pushup",          title: "Push-up",       desc: "Upper body & core stabilisation",                 icon: "💪" },
+  { key: "curl",            title: "Bicep Curl",    desc: "Elbow ROM & cheat classification",                icon: "🏋️" },
+  { key: "lateral_raise",   title: "Lateral Raise", desc: "Shoulder abduction & symmetry analysis",          icon: "🙆" },
+  { key: "knee_extension",  title: "Knee Extension", desc: "Seated straight-leg raise & ROM analysis",       icon: "🦵" },
+  { key: "wall_pushup",     title: "Wall Push-Up",   desc: "Upper body & shoulder mobility analysis",        icon: "🤜" },
+  { key: "hip_march",       title: "Hip March",      desc: "Hip flexor mobility & symmetry analysis",        icon: "🏃" },
 ];
 
 const EXERCISE_LABELS = Object.fromEntries(EXERCISES.map(e => [e.key, e.title]));
