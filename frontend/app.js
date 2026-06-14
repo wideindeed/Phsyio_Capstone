@@ -19,6 +19,8 @@ new QWebChannel(qt.webChannelTransport, (channel) => {
   backend.status_changed.connect(onStatusChanged);
   backend.session_finished.connect(onSessionFinished);
   backend.history_loaded.connect(onHistoryLoaded);
+  backend.goals_loaded.connect(onGoalsLoaded);
+  backend.achievements_loaded.connect(onAchievementsLoaded);
 
   // ── Seed the UI with real backend state ─────────────────────────────────
   backend.get_initial_state((stateJson) => {
@@ -28,6 +30,8 @@ new QWebChannel(qt.webChannelTransport, (channel) => {
 
   // ── Load history for Records page ───────────────────────────────────────
   backend.fetch_history();
+  backend.fetch_goals();
+  backend.fetch_achievements();
 });
 
 // ---------------------------------------------------------------------------
@@ -67,6 +71,21 @@ const PAIN_LABELS = [
   "Moderate", "Moderate Severe", "Severe", "Very Severe",
   "Intense", "Extremely Intense", "Unbearable"
 ];
+
+const ACHIEVEMENT_DESCS = {
+  first_rep:         "Completed your very first session.",
+  ten_sessions:      "Completed 10 sessions.",
+  fifty_sessions:    "Completed 50 sessions.",
+  hundred_sessions:  "Completed 100 sessions.",
+  perfect_score:     "Achieved a perfect form score of 100 on a rep.",
+  high_scorer:       "Averaged 90+ form score across 10+ sessions.",
+  all_rounder:       "Tried all 5 exercises at least once.",
+  pain_warrior:      "Completed a session reporting pain level 7 or above.",
+  hundred_reps:      "Accumulated 100 total reps across all sessions.",
+  five_hundred_reps: "Accumulated 500 total reps across all sessions.",
+  comeback_kid:      "Returned to training after a 7+ day absence.",
+  streak_7:          "Exercised on 7 consecutive calendar days.",
+};
 
 // ---------------------------------------------------------------------------
 // Navigation
@@ -262,6 +281,196 @@ function onHistoryLoaded(jsonStr) {
   renderAnalyticsChart(records, "all");
   renderAnalyticsBreakdown(records);
   renderAnalyticsKpis(records);
+}
+
+// ---------------------------------------------------------------------------
+// Goals — signal handler
+// ---------------------------------------------------------------------------
+function onGoalsLoaded(jsonStr) {
+  const goals = JSON.parse(jsonStr);
+  renderGoals(goals);
+}
+
+// ---------------------------------------------------------------------------
+// Achievements — signal handler
+// ---------------------------------------------------------------------------
+function onAchievementsLoaded(jsonStr) {
+  const achievements = JSON.parse(jsonStr);
+  renderAchievements(achievements);
+}
+
+// ---------------------------------------------------------------------------
+// Render active goals with progress bars
+// ---------------------------------------------------------------------------
+const GOAL_TYPE_LABELS = { reps: "Total Reps", score: "Avg Score", sessions: "Sessions" };
+const EXERCISE_ICONS   = {
+  any: "🏃", squat: "🦵", sts: "🪑", pushup: "💪",
+  curl: "🏋️", lateral_raise: "🙆"
+};
+
+function renderGoals(goals) {
+  const container = document.getElementById("goals-list");
+  if (!container) return;
+
+  if (!goals || goals.length === 0) {
+    container.innerHTML = `
+      <div class="goals-empty">
+        No active goals yet. Hit <strong>+ Add Goal</strong> to create one.
+      </div>`;
+    return;
+  }
+
+  container.innerHTML = goals.map(g => {
+    const icon      = EXERCISE_ICONS[g.exercise] || "🏃";
+    const typeLabel = GOAL_TYPE_LABELS[g.goal_type] || g.goal_type;
+    const pct       = g.progress_pct ?? 0;
+    const fillClass = pct >= 80 ? "" : pct >= 40 ? "warn" : "crit";
+    const deadline  = g.deadline
+      ? `  ·  Due ${new Date(g.deadline).toLocaleDateString("en-GB",
+          { day: "2-digit", month: "short", year: "numeric" })}`
+      : "";
+
+    let currentLabel, targetLabel;
+    if (g.goal_type === "score") {
+      currentLabel = `${g.current_value}/100 avg`;
+      targetLabel  = `Target: ${g.target_value}/100`;
+    } else {
+      currentLabel = `${g.current_value} / ${g.target_value}`;
+      targetLabel  = `${pct}%`;
+    }
+
+    return `
+      <div class="goal-item">
+        <div class="goal-item-header">
+          <div>
+            <div class="goal-item-label">${icon} ${typeLabel}${deadline}</div>
+            <div class="goal-item-meta">${
+              g.exercise === "any" ? "Any Exercise" : (g.exercise || "").replace(/_/g, " ")
+            }</div>
+          </div>
+          <button class="goal-delete-btn" title="Remove goal"
+                  onclick="deleteGoal(${g.id})">✕</button>
+        </div>
+        <div class="goal-progress-track">
+          <div class="goal-progress-fill ${fillClass}"
+               style="width:${pct}%"></div>
+        </div>
+        <div class="goal-progress-label">
+          <span>${currentLabel}</span>
+          <span>${targetLabel}</span>
+        </div>
+      </div>`;
+  }).join("");
+}
+
+// ---------------------------------------------------------------------------
+// Render achievement badges (locked + unlocked)
+// ---------------------------------------------------------------------------
+const TIER_COLORS = { gold: "tier-gold", silver: "tier-silver", bronze: "" };
+
+function renderAchievements(achievements) {
+  const grid = document.getElementById("achievements-grid");
+  if (!grid || !achievements) return;
+
+  // Show unlocked first, then locked
+  const sorted = [
+    ...achievements.filter(a => a.unlocked),
+    ...achievements.filter(a => !a.unlocked),
+  ];
+
+  grid.innerHTML = sorted.map(a => {
+    const lockedClass   = a.unlocked ? `unlocked ${TIER_COLORS[a.tier] || ""}` : "locked";
+    const dateStr       = a.unlocked && a.unlocked_at
+      ? new Date(a.unlocked_at).toLocaleDateString("en-GB",
+          { day: "2-digit", month: "short", year: "numeric" })
+      : null;
+    const desc     = ACHIEVEMENT_DESCS[a.key] || a.desc || "";
+    const lockIcon = a.unlocked ? "" : `<div class="achievement-icon">🔒</div>`;
+    const realIcon      = a.unlocked ? `<div class="achievement-icon">${a.icon}</div>` : "";
+
+    return `
+      <div class="achievement-badge ${lockedClass}" title="${a.desc}">
+        ${a.unlocked ? realIcon : lockIcon}
+        <div class="achievement-title">${a.title}</div>
+        ${a.unlocked && dateStr
+          ? `<div class="achievement-date">${dateStr}</div>`
+          : `<div class="achievement-desc">${desc}</div>`
+        }
+      </div>`;
+  }).join("");
+}
+
+// ---------------------------------------------------------------------------
+// Goal creation modal
+// ---------------------------------------------------------------------------
+const GOAL_HINTS = {
+  reps:     "Accumulate this many reps from today.",
+  sessions: "Complete this many sessions from today.",
+  score:    "Reach this average form score (0 – 100).",
+};
+
+function openGoalDialog() {
+  const overlay = document.getElementById("goal-modal-overlay");
+  if (overlay) overlay.classList.add("open");
+  updateGoalHint();
+}
+
+function closeGoalDialog() {
+  const overlay = document.getElementById("goal-modal-overlay");
+  if (overlay) overlay.classList.remove("open");
+}
+
+function updateGoalHint() {
+  const type  = document.getElementById("gm-type")?.value || "reps";
+  const hint  = document.getElementById("gm-hint");
+  if (hint) hint.textContent = GOAL_HINTS[type] || "";
+
+  // Cap score target at 100
+  const targetInput = document.getElementById("gm-target");
+  if (targetInput) {
+    if (type === "score") {
+      targetInput.max         = "100";
+      targetInput.placeholder = "e.g. 85";
+      if (parseInt(targetInput.value) > 100) targetInput.value = "85";
+    } else {
+      targetInput.max         = "10000";
+      targetInput.placeholder = "e.g. 50";
+    }
+  }
+}
+
+function submitGoal() {
+  if (!backend) return;
+
+  const exercise = document.getElementById("gm-exercise")?.value || "any";
+  const goalType = document.getElementById("gm-type")?.value     || "reps";
+  const target   = parseFloat(document.getElementById("gm-target")?.value || "0");
+  const deadline = document.getElementById("gm-deadline")?.value  || null;
+
+  if (!target || target <= 0) {
+    toast("Please enter a valid target.", "error");
+    return;
+  }
+  if (goalType === "score" && target > 100) {
+    toast("Score target cannot exceed 100.", "error");
+    return;
+  }
+
+  closeGoalDialog();
+
+  backend.create_goal(
+    exercise,
+    goalType,
+    JSON.stringify(target),
+    JSON.stringify(deadline)   // "null" or "\"2026-12-31\""
+  );
+  toast("Goal created!", "success");
+}
+
+function deleteGoal(goalId) {
+  if (!backend) return;
+  backend.delete_goal(goalId);
+  toast("Goal removed.", "info");
 }
 
 // ---------------------------------------------------------------------------
@@ -821,6 +1030,13 @@ function submitPainScore() {
     report.avg_score || 0,
     JSON.stringify(report.details || [])
   );
+  // Re-fetch goals and achievements to reflect new session progress
+  if (backend) {
+    setTimeout(() => {
+      backend.fetch_goals();
+      backend.fetch_achievements();
+    }, 2000);   // slight delay so the server has time to commit before we query
+  }
 }
 
 function currentRecords() {
@@ -850,6 +1066,22 @@ document.addEventListener("DOMContentLoaded", () => {
   document.querySelectorAll(".nav-item").forEach(btn => {
     btn.addEventListener("click", () => navigate(btn.dataset.page));
   });
+
+  // Re-fetch goals & achievements when opening those pages
+  document.querySelectorAll(".nav-item[data-page='goals'], .nav-item[data-page='achievements']")
+    .forEach(btn => {
+      btn.addEventListener("click", () => {
+        if (!backend) return;
+        backend.fetch_goals();
+        backend.fetch_achievements();
+      });
+    });
+
+  // Goal modal — close on overlay background click
+  document.getElementById("goal-modal-overlay")?.addEventListener("click", (e) => {
+    if (e.target === e.currentTarget) closeGoalDialog();
+  });
+
 
   // Exercise cards
   document.querySelectorAll(".exercise-card[data-key]").forEach(card => {

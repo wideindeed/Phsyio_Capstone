@@ -13,8 +13,200 @@
   <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+  <style>
+  /* ── Goals Section ───────────────────────────────────────────────────── */
+  .hub-section-header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin: 28px 0 12px;
+  }
+  .hub-section-title {
+    font-size: 14px; font-weight: 700; color: var(--text-primary);
+    letter-spacing: 0.02em; text-transform: uppercase;
+  }
+  .goal-item {
+    background: var(--surface-elevated, #fff);
+    border: 1px solid var(--border, #E5E7EB);
+    border-radius: 10px;
+    padding: 14px 16px;
+    margin-bottom: 10px;
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .goal-item-header {
+    display: flex; justify-content: space-between; align-items: flex-start;
+  }
+  .goal-item-label {
+    font-size: 13px; font-weight: 600; color: var(--text-primary);
+  }
+  .goal-item-meta {
+    font-size: 11px; color: var(--text-muted, #9CA3AF); margin-top: 2px;
+  }
+  .goal-delete-btn {
+    background: none; border: none; cursor: pointer;
+    color: var(--text-muted, #9CA3AF); font-size: 14px; padding: 0 2px;
+    line-height: 1; transition: color 0.15s;
+  }
+  .goal-delete-btn:hover { color: var(--accent-red, #EF4444); }
+  .goal-progress-track {
+    background: var(--border, #E5E7EB);
+    border-radius: 99px; height: 6px; overflow: hidden;
+  }
+  .goal-progress-fill {
+    height: 100%; border-radius: 99px;
+    background: var(--accent-green, #10B981);
+    transition: width 0.4s ease;
+  }
+  .goal-progress-fill.warn  { background: var(--accent-amber, #F59E0B); }
+  .goal-progress-fill.crit  { background: var(--accent-red, #EF4444); }
+  .goal-progress-label {
+    font-size: 11px; color: var(--text-muted, #9CA3AF);
+    font-family: 'DM Mono', monospace;
+    display: flex; justify-content: space-between;
+  }
+  .goals-empty {
+    text-align: center; padding: 24px 0;
+    font-size: 13px; color: var(--text-muted, #9CA3AF);
+  }
+
+  /* ── Achievements Grid ───────────────────────────────────────────────── */
+  .achievements-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 10px;
+    margin-bottom: 20px;
+  }
+  .achievement-badge {
+    border: 1px solid var(--border, #E5E7EB);
+    border-radius: 10px;
+    padding: 12px 10px;
+    text-align: center;
+    transition: border-color 0.15s, box-shadow 0.15s;
+    cursor: default;
+  }
+  .achievement-badge.unlocked {
+    background: var(--surface-elevated, #fff);
+    border-color: var(--accent-green, #10B981);
+    box-shadow: 0 0 0 1px var(--accent-green, #10B981)22;
+  }
+  .achievement-badge.unlocked.tier-gold {
+    border-color: #F59E0B;
+    box-shadow: 0 0 0 1px #F59E0B22;
+  }
+  .achievement-badge.unlocked.tier-silver {
+    border-color: #94A3B8;
+    box-shadow: 0 0 0 1px #94A3B822;
+  }
+  .achievement-badge.locked {
+    background: var(--surface, #F9FAFB);
+    opacity: 0.5;
+    filter: grayscale(1);
+  }
+  .achievement-icon { font-size: 22px; margin-bottom: 6px; }
+  .achievement-title {
+    font-size: 11px; font-weight: 700;
+    color: var(--text-primary); line-height: 1.3;
+  }
+  .achievement-desc {
+    font-size: 10px; color: var(--text-muted, #9CA3AF);
+    margin-top: 3px; line-height: 1.3;
+  }
+  .achievement-date {
+    font-size: 10px; color: var(--accent-green, #10B981);
+    margin-top: 4px; font-family: 'DM Mono', monospace;
+  }
+
+  /* ── Goal Creation Modal ─────────────────────────────────────────────── */
+  .goal-modal-overlay {
+    display: none; position: fixed; inset: 0;
+    background: rgba(15, 23, 42, 0.7);
+    z-index: 8000; align-items: center; justify-content: center;
+  }
+  .goal-modal-overlay.open { display: flex; }
+  .goal-modal {
+    background: var(--surface-elevated, #fff);
+    border: 1px solid var(--border, #E5E7EB);
+    border-radius: 14px;
+    padding: 28px 24px;
+    width: 380px; max-width: 95vw;
+    box-shadow: 0 24px 48px rgba(0,0,0,0.18);
+  }
+  .goal-modal-title {
+    font-size: 16px; font-weight: 700; color: var(--text-primary);
+    margin: 0 0 20px;
+  }
+  .goal-form-row {
+    display: flex; flex-direction: column; gap: 5px; margin-bottom: 16px;
+  }
+  .goal-form-label {
+    font-size: 12px; font-weight: 600; color: var(--text-secondary, #6B7280);
+    text-transform: uppercase; letter-spacing: 0.04em;
+  }
+  .goal-form-select, .goal-form-input {
+    padding: 9px 12px;
+    border: 1px solid var(--border, #E5E7EB);
+    border-radius: 8px;
+    font-size: 13px;
+    color: var(--text-primary);
+    background: var(--surface, #F9FAFB);
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  .goal-form-select:focus, .goal-form-input:focus {
+    border-color: var(--accent-green, #10B981);
+  }
+  .goal-form-hint {
+    font-size: 11px; color: var(--text-muted, #9CA3AF); margin-top: 2px;
+  }
+  .goal-modal-actions {
+    display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px;
+  }
+</style>
 </head>
 <body>
+
+<div class="goal-modal-overlay" id="goal-modal-overlay">
+  <div class="goal-modal">
+    <div class="goal-modal-title">🎯 Add New Goal</div>
+
+    <div class="goal-form-row">
+      <label class="goal-form-label">Exercise</label>
+      <select class="goal-form-select" id="gm-exercise">
+        <option value="any">Any Exercise</option>
+        <option value="squat">🦵 Deep Squat</option>
+        <option value="sts">🪑 Sit to Stand</option>
+        <option value="pushup">💪 Push-up</option>
+        <option value="curl">🏋️ Bicep Curl</option>
+        <option value="lateral_raise">🙆 Lateral Raise</option>
+      </select>
+    </div>
+
+    <div class="goal-form-row">
+      <label class="goal-form-label">Goal Type</label>
+      <select class="goal-form-select" id="gm-type" onchange="updateGoalHint()">
+        <option value="reps">Total Reps</option>
+        <option value="sessions">Sessions Completed</option>
+        <option value="score">Average Form Score</option>
+      </select>
+    </div>
+
+    <div class="goal-form-row">
+      <label class="goal-form-label">Target</label>
+      <input class="goal-form-input" type="number" id="gm-target"
+             min="1" max="10000" value="50" placeholder="e.g. 50">
+      <div class="goal-form-hint" id="gm-hint">Accumulate 50 total reps from the creation date.</div>
+    </div>
+
+    <div class="goal-form-row">
+      <label class="goal-form-label">Deadline <span style="font-weight:400;opacity:.6">(optional)</span></label>
+      <input class="goal-form-input" type="date" id="gm-deadline">
+    </div>
+
+    <div class="goal-modal-actions">
+      <button class="btn btn-ghost btn-sm" onclick="closeGoalDialog()">Cancel</button>
+      <button class="btn btn-primary btn-sm" onclick="submitGoal()">Create Goal</button>
+    </div>
+  </div>
+</div>
+
 
 <div id="app">
 
@@ -52,6 +244,12 @@
       <button class="nav-item" data-page="analytics">
         <span class="nav-icon">📈</span> Analytics
       </button>
+      <button class="nav-item" data-page="goals">
+        <span class="nav-icon">🎯</span> Goals
+      </button>
+      <button class="nav-item" data-page="achievements">
+        <span class="nav-icon">🏅</span> Achievements
+      </button>
     </div>
 
     <div class="sidebar-bottom">
@@ -60,6 +258,8 @@
       </button>
     </div>
   </nav>
+
+
 
 
   <!-- ═══════════════════════════════════════════════════════════════
@@ -139,6 +339,7 @@
 
       </div>
     </div>
+
     <!-- /page-hub -->
 
 
@@ -330,6 +531,40 @@
 
     </div>
     <!-- /page-analytics -->
+     <!-- ─── PAGE: GOALS ───────────────────────────────────────── -->
+    <div class="page" id="page-goals">
+
+      <div class="page-header">
+        <div>
+          <div class="page-title">Active Goals</div>
+          <div class="page-subtitle">Track your progress toward personal targets.</div>
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="openGoalDialog()">+ Add Goal</button>
+      </div>
+
+      <div id="goals-list">
+        <div class="goals-empty">Loading goals…</div>
+      </div>
+
+    </div>
+    <!-- /page-goals -->
+
+    <!-- ─── PAGE: ACHIEVEMENTS ────────────────────────────────── -->
+    <div class="page" id="page-achievements">
+
+      <div class="page-header">
+        <div>
+          <div class="page-title">Achievements</div>
+          <div class="page-subtitle">Milestones unlocked automatically as you train.</div>
+        </div>
+      </div>
+
+      <div class="achievements-grid" id="achievements-grid">
+        <!-- populated by JS -->
+      </div>
+
+    </div>
+    <!-- /page-achievements -->
 
 
     <!-- ─── PAGE: SETTINGS ─────────────────────────────────────── -->

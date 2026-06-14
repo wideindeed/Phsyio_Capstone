@@ -59,6 +59,7 @@ from PyQt5.QtWebChannel import QWebChannel
 
 from qfluentwidgets import setTheme, Theme
 
+from goals import GoalTracker
 from auth import API_URL
 from engine import state, VisionWorker
 
@@ -179,6 +180,8 @@ class Bridge(QObject):
     status_changed   = Signal(str, str)  # text, colour
     session_finished = Signal(str)       # JSON
     history_loaded   = Signal(str)       # JSON array
+    goals_loaded = Signal(str)  # JSON array of goal dicts (with progress fields)
+    achievements_loaded = Signal(str)  # JSON array of achievement dicts (locked/unlocked)
 
     def __init__(self, worker: VisionWorker, token: str,
                  username: str, parent=None):
@@ -186,6 +189,7 @@ class Bridge(QObject):
         self._worker   = worker
         self._token    = token
         self._username = username
+        self._goal_tracker = GoalTracker(API_URL, token)
 
     # ── Thread-safe emit trampoline ───────────────────────────────────────
     def _emit_safe(self, signal_name: str, arg: str):
@@ -209,6 +213,10 @@ class Bridge(QObject):
             self.history_loaded.emit(arg)
         elif signal_name == "session":
             self.session_finished.emit(arg)
+        elif signal_name == "goals":
+            self.goals_loaded.emit(arg)
+        elif signal_name == "achievements":
+            self.achievements_loaded.emit(arg)
 
     # ── JS → Python slots ─────────────────────────────────────────────────
 
@@ -318,23 +326,53 @@ class Bridge(QObject):
         threading.Thread(target=_fetch, daemon=True).start()
 
     @Slot()
-    def fetch_history(self):
-        token = self._token
-        def _fetch():
-            try:
-                headers = {
-                    "Authorization": f"Bearer {token}",
-                    "X-Desktop-Key": "my_secret_desktop_key_2026"
-                }
-                resp = requests.get(f"{API_URL}/get_history",
-                                    headers=headers, timeout=10)
-                if resp.status_code == 200:
-                    records = resp.json().get("history", [])
-                    # trampoline back to main thread
-                    self._emit_safe("history", json.dumps(records))
-            except Exception as err:
-                print(f"[Bridge] fetch_history error: {err}")
-        threading.Thread(target=_fetch, daemon=True).start()
+    def fetch_goals(self):
+        """JS calls this to request the user's active goals with progress."""
+        self._goal_tracker.fetch_goals(
+            lambda data: self._emit_safe("goals", json.dumps(data or []))
+        )
+
+    @Slot()
+    def fetch_achievements(self):
+        """JS calls this to request the full achievement catalogue."""
+        self._goal_tracker.fetch_achievements(
+            lambda data: self._emit_safe("achievements", json.dumps(data or []))
+        )
+
+    @Slot(str, str, str, str)
+    def create_goal(self, exercise: str, goal_type: str,
+                    target_json: str, deadline_json: str):
+        """
+        JS calls this with JSON-encoded target and deadline.
+        deadline_json is either a quoted ISO date string or "null".
+        On success, emits an updated goals list back to the UI.
+        """
+        try:
+            target = float(json.loads(target_json))
+            deadline = json.loads(deadline_json)  # str | None
+        except Exception as e:
+            print(f"[Bridge] create_goal parse error: {e}")
+            return
+
+        def _on_created(_data):
+            # Re-fetch so UI sees the new goal with accurate progress
+            self._goal_tracker.fetch_goals(
+                lambda d: self._emit_safe("goals", json.dumps(d or []))
+            )
+
+        self._goal_tracker.create_goal(exercise, goal_type, target, deadline, _on_created)
+
+    @Slot(int)
+    def delete_goal(self, goal_id: int):
+        """JS calls this to remove a goal. Re-fetches on success."""
+
+        def _on_deleted(_ok):
+            self._goal_tracker.fetch_goals(
+                lambda d: self._emit_safe("goals", json.dumps(d or []))
+            )
+
+        self._goal_tracker.delete_goal(goal_id, _on_deleted)
+
 
 
 # ---------------------------------------------------------------------------
