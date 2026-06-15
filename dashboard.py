@@ -182,6 +182,7 @@ class Bridge(QObject):
     history_loaded   = Signal(str)       # JSON array
     goals_loaded = Signal(str)  # JSON array of goal dicts (with progress fields)
     achievements_loaded = Signal(str)  # JSON array of achievement dicts (locked/unlocked)
+    course_progress_loaded = Signal(str)  # JSON array of completed course step rows
 
     def __init__(self, worker: VisionWorker, token: str,
                  username: str, parent=None):
@@ -217,6 +218,8 @@ class Bridge(QObject):
             self.goals_loaded.emit(arg)
         elif signal_name == "achievements":
             self.achievements_loaded.emit(arg)
+        elif signal_name == "course_progress":
+            self.course_progress_loaded.emit(arg)
 
     # ── JS → Python slots ─────────────────────────────────────────────────
 
@@ -434,6 +437,70 @@ class Bridge(QObject):
 
         self._goal_tracker.delete_goal(goal_id, _on_deleted)
 
+    # ── Course progress slots ─────────────────────────────────────────────
+
+    @Slot()
+    def fetch_course_progress(self):
+        """JS calls this to load all completed course steps for the user."""
+        def _fetch():
+            try:
+                resp = requests.get(
+                    f"{API_URL}/get_course_progress",
+                    headers={
+                        "Authorization": f"Bearer {self._token}",
+                        "X-Desktop-Key": "my_secret_desktop_key_2026",
+                    },
+                    timeout=10,
+                )
+                rows = resp.json().get("steps", []) if resp.ok else []
+            except Exception as e:
+                print(f"[Bridge] fetch_course_progress error: {e}")
+                rows = []
+            self._emit_safe("course_progress", json.dumps(rows))
+        threading.Thread(target=_fetch, daemon=True).start()
+
+    @Slot(str, int, str, str)
+    def log_course_step(self, course_id: str, step_index: int,
+                        reps_json: str, score_json: str):
+        """JS calls this when a course exercise session finishes."""
+        try:
+            reps  = int(json.loads(reps_json))
+            score = int(json.loads(score_json))
+        except Exception as e:
+            print(f"[Bridge] log_course_step parse error: {e}")
+            return
+        def _post():
+            try:
+                requests.post(
+                    f"{API_URL}/log_course_step",
+                    json={"course_id": course_id, "step_index": step_index,
+                          "reps": reps, "score": score},
+                    headers={
+                        "Authorization": f"Bearer {self._token}",
+                        "X-Desktop-Key": "my_secret_desktop_key_2026",
+                    },
+                    timeout=10,
+                )
+            except Exception as e:
+                print(f"[Bridge] log_course_step POST error: {e}")
+        threading.Thread(target=_post, daemon=True).start()
+
+    @Slot(str)
+    def reset_course(self, course_id: str):
+        """JS calls this to wipe all progress for a course."""
+        def _delete():
+            try:
+                requests.delete(
+                    f"{API_URL}/reset_course/{course_id}",
+                    headers={
+                        "Authorization": f"Bearer {self._token}",
+                        "X-Desktop-Key": "my_secret_desktop_key_2026",
+                    },
+                    timeout=10,
+                )
+            except Exception as e:
+                print(f"[Bridge] reset_course error: {e}")
+        threading.Thread(target=_delete, daemon=True).start()
 
 
 # ---------------------------------------------------------------------------

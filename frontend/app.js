@@ -21,6 +21,7 @@ new QWebChannel(qt.webChannelTransport, (channel) => {
   backend.history_loaded.connect(onHistoryLoaded);
   backend.goals_loaded.connect(onGoalsLoaded);
   backend.achievements_loaded.connect(onAchievementsLoaded);
+  backend.course_progress_loaded.connect(onCourseProgressLoaded);
 
   // ── Seed the UI with real backend state ─────────────────────────────────
   backend.get_initial_state((stateJson) => {
@@ -32,6 +33,7 @@ new QWebChannel(qt.webChannelTransport, (channel) => {
   backend.fetch_history();
   backend.fetch_goals();
   backend.fetch_achievements();
+  backend.fetch_course_progress();
 });
 
 // ---------------------------------------------------------------------------
@@ -43,6 +45,7 @@ const ui = {
   sessionRunning: false,
   lastReport: null,
   painPromptEnabled: true,
+  activeCourse: null,   // { courseId, stepIndex } when launched from a course
 };
 
 // Tracks the live Chart.js instance so we can destroy it cleanly before
@@ -427,6 +430,7 @@ function _autoSubmitSession(report) {
   if (backend) {
     backend.submit_pain_score("0", ui.currentExercise || "", report.reps || 0,
       report.avg_score || 0, JSON.stringify(report.details || []));
+    _logCourseStepIfActive(report.reps || 0, report.avg_score || 0);
     setTimeout(() => { backend.fetch_goals(); backend.fetch_achievements(); }, 2000);
   }
 }
@@ -467,6 +471,361 @@ function onGoalsLoaded(jsonStr) {
 function onAchievementsLoaded(jsonStr) {
   const achievements = JSON.parse(jsonStr);
   renderAchievements(achievements);
+}
+
+// ---------------------------------------------------------------------------
+// Courses — catalogue (client-side definitions; only progress goes to server)
+// ---------------------------------------------------------------------------
+const COURSES = [
+  {
+    id: "knee_rehab_beginner",
+    title: "Knee Rehabilitation",
+    emoji: "🦵",
+    category: "Knee",
+    difficulty: "beginner",
+    age_group: "all",
+    duration_mins: 15,
+    description: "Gentle knee rehabilitation for post-injury recovery. Rebuilds range of motion and quad strength progressively with low joint stress.",
+    exercises: [
+      { key: "knee_extension", label: "Knee Extension", icon: "🦵", reps: 8,  sets: 2 },
+      { key: "hip_march",      label: "Hip March",      icon: "🏃", reps: 10, sets: 2 },
+      { key: "sts",            label: "Sit to Stand",   icon: "🪑", reps: 5,  sets: 2 },
+    ]
+  },
+  {
+    id: "shoulder_recovery",
+    title: "Shoulder Recovery",
+    emoji: "🙆",
+    category: "Shoulder",
+    difficulty: "beginner",
+    age_group: "45plus",
+    duration_mins: 20,
+    description: "Rotator cuff and scapular stabilization for shoulder impingement or post-surgery recovery. Low resistance, high focus on control.",
+    exercises: [
+      { key: "shoulder_scaption",  label: "Shoulder Scaption",  icon: "🙌", reps: 8,  sets: 2 },
+      { key: "shoulder_extension", label: "Shoulder Extension", icon: "🔙", reps: 8,  sets: 2 },
+      { key: "wall_pushup",        label: "Wall Push-Up",       icon: "🤜", reps: 10, sets: 2 },
+      { key: "lateral_raise",      label: "Lateral Raise",      icon: "🙆", reps: 8,  sets: 2 },
+    ]
+  },
+  {
+    id: "senior_mobility",
+    title: "Senior Mobility",
+    emoji: "🧓",
+    category: "Senior",
+    difficulty: "beginner",
+    age_group: "60plus",
+    duration_mins: 12,
+    description: "Fall prevention and functional mobility for older adults. Targets lower limb strength and dynamic balance in a safe seated-to-standing progression.",
+    exercises: [
+      { key: "sts",            label: "Sit to Stand",   icon: "🪑", reps: 5, sets: 3 },
+      { key: "hip_march",      label: "Hip March",      icon: "🏃", reps: 8, sets: 2 },
+      { key: "knee_extension", label: "Knee Extension", icon: "🦵", reps: 6, sets: 2 },
+    ]
+  },
+  {
+    id: "post_surgery_recovery",
+    title: "Post-Surgery Recovery",
+    emoji: "⚕️",
+    category: "Knee",
+    difficulty: "beginner",
+    age_group: "all",
+    duration_mins: 10,
+    description: "Low-impact controlled movement protocol for patients recovering from lower extremity surgery. Prioritizes precision form over intensity.",
+    exercises: [
+      { key: "knee_extension", label: "Knee Extension", icon: "🦵", reps: 5, sets: 2 },
+      { key: "hip_march",      label: "Hip March",      icon: "🏃", reps: 6, sets: 2 },
+      { key: "sts",            label: "Sit to Stand",   icon: "🪑", reps: 4, sets: 2 },
+    ]
+  },
+  {
+    id: "upper_body_strength",
+    title: "Upper Body Strength",
+    emoji: "💪",
+    category: "Upper Body",
+    difficulty: "intermediate",
+    age_group: "adult",
+    duration_mins: 25,
+    description: "Build chest, shoulder, and arm strength through progressive push and pull patterns. Demands consistent form across higher rep ranges.",
+    exercises: [
+      { key: "pushup",        label: "Push-up",       icon: "💪", reps: 12, sets: 3 },
+      { key: "curl",          label: "Bicep Curl",    icon: "🏋️", reps: 10, sets: 3 },
+      { key: "lateral_raise", label: "Lateral Raise", icon: "🙆", reps: 12, sets: 3 },
+      { key: "wall_pushup",   label: "Wall Push-Up",  icon: "🤜", reps: 15, sets: 2 },
+    ]
+  },
+  {
+    id: "shoulder_upper_back",
+    title: "Shoulder & Upper Back",
+    emoji: "🔙",
+    category: "Shoulder",
+    difficulty: "intermediate",
+    age_group: "all",
+    duration_mins: 20,
+    description: "Targets posterior shoulder and scapular muscles. Counteracts desk posture and reduces chronic upper back tension through controlled eccentric work.",
+    exercises: [
+      { key: "shoulder_extension", label: "Shoulder Extension", icon: "🔙", reps: 10, sets: 3 },
+      { key: "shoulder_scaption",  label: "Shoulder Scaption",  icon: "🙌", reps: 10, sets: 3 },
+      { key: "wall_pushup",        label: "Wall Push-Up",       icon: "🤜", reps: 12, sets: 2 },
+      { key: "lateral_raise",      label: "Lateral Raise",      icon: "🙆", reps: 10, sets: 2 },
+    ]
+  },
+  {
+    id: "full_body_conditioning",
+    title: "Full Body Conditioning",
+    emoji: "🏋️",
+    category: "Full Body",
+    difficulty: "intermediate",
+    age_group: "adult",
+    duration_mins: 35,
+    description: "Complete functional conditioning circuit targeting all major muscle groups. Great for general fitness maintenance and building exercise consistency.",
+    exercises: [
+      { key: "squat",         label: "Deep Squat",    icon: "🦵", reps: 10, sets: 3 },
+      { key: "pushup",        label: "Push-up",       icon: "💪", reps: 10, sets: 3 },
+      { key: "curl",          label: "Bicep Curl",    icon: "🏋️", reps: 12, sets: 2 },
+      { key: "lateral_raise", label: "Lateral Raise", icon: "🙆", reps: 10, sets: 2 },
+      { key: "hip_march",     label: "Hip March",     icon: "🏃", reps: 15, sets: 2 },
+    ]
+  },
+  {
+    id: "advanced_athletic",
+    title: "Athletic Performance",
+    emoji: "🏆",
+    category: "Full Body",
+    difficulty: "advanced",
+    age_group: "adult",
+    duration_mins: 40,
+    description: "High-intensity functional training demanding precision form at elevated rep counts. Built for athletes focused on movement quality under fatigue.",
+    exercises: [
+      { key: "squat",         label: "Deep Squat",    icon: "🦵", reps: 15, sets: 4 },
+      { key: "pushup",        label: "Push-up",       icon: "💪", reps: 15, sets: 4 },
+      { key: "curl",          label: "Bicep Curl",    icon: "🏋️", reps: 15, sets: 3 },
+      { key: "lateral_raise", label: "Lateral Raise", icon: "🙆", reps: 15, sets: 3 },
+    ]
+  },
+];
+
+// { courseId: { completed_steps: Set<number>, step_scores: {index: score} } }
+let _courseProgress = {};
+let _activeCourseModal = null;
+
+// ---------------------------------------------------------------------------
+// Courses — server signal handler
+// ---------------------------------------------------------------------------
+function onCourseProgressLoaded(jsonStr) {
+  const rows = JSON.parse(jsonStr);
+  _courseProgress = {};
+  if (!Array.isArray(rows)) return;
+  rows.forEach(r => {
+    if (!_courseProgress[r.course_id]) {
+      _courseProgress[r.course_id] = { completed_steps: new Set(), step_scores: {} };
+    }
+    _courseProgress[r.course_id].completed_steps.add(r.step_index);
+    _courseProgress[r.course_id].step_scores[r.step_index] = r.score;
+  });
+  if (ui.currentPage === "courses") renderCourses();
+}
+
+// ---------------------------------------------------------------------------
+// Courses — render card grid
+// ---------------------------------------------------------------------------
+function renderCourses() {
+  const diffFilter = document.querySelector("#course-diff-filters .courses-filter-pill.active")?.dataset.diff || "all";
+  const ageFilter  = document.querySelector("#course-age-filters .courses-filter-pill.active")?.dataset.age  || "all";
+  const grid = document.getElementById("courses-grid");
+  if (!grid) return;
+
+  const AGE_MAP = { all: "All Ages", adult: "18–60", "45plus": "45+", "60plus": "60+" };
+
+  grid.innerHTML = "";
+
+  const visible = COURSES.filter(c => {
+    const diffOk = diffFilter === "all" || c.difficulty === diffFilter;
+    const ageOk  = ageFilter  === "all" || c.age_group  === ageFilter || c.age_group === "all";
+    return diffOk && ageOk;
+  });
+
+  if (!visible.length) {
+    grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:48px 0;color:var(--text-muted);font-size:13px;">No courses match the selected filters.</div>`;
+    return;
+  }
+
+  visible.forEach((course, i) => {
+    const prog           = _courseProgress[course.id];
+    const completedCount = prog ? prog.completed_steps.size : 0;
+    const totalSteps     = course.exercises.length;
+    const pct            = totalSteps > 0 ? Math.round((completedCount / totalSteps) * 100) : 0;
+    const isComplete     = completedCount >= totalSteps && totalSteps > 0;
+    const isStarted      = completedCount > 0 && !isComplete;
+
+    const diffLabel = { beginner: "Beginner", intermediate: "Intermediate", advanced: "Advanced" }[course.difficulty];
+    const ageLabel  = AGE_MAP[course.age_group] || "All Ages";
+
+    let btnLabel = "View Course";
+    let btnClass = "";
+    if (isComplete)  { btnLabel = "✓ Completed"; btnClass = "complete"; }
+    else if (isStarted) { btnLabel = "Continue →"; btnClass = "primary"; }
+
+    const card = document.createElement("div");
+    card.className = "course-card";
+    card.style.animationDelay = `${i * 50}ms`;
+    card.innerHTML = `
+      <div class="course-card-accent ${course.difficulty}"></div>
+      <div class="course-card-body">
+        <div class="course-card-top">
+          <div class="course-card-emoji ${course.difficulty}">${course.emoji}</div>
+          <div class="course-card-title-wrap">
+            <div class="course-card-title">${course.title}</div>
+            <div class="course-card-category">${course.category}</div>
+          </div>
+        </div>
+        <div class="course-card-desc">${course.description}</div>
+        <div class="course-card-tags">
+          <span class="course-tag ${course.difficulty}">${diffLabel}</span>
+          <span class="course-tag">${ageLabel}</span>
+          <span class="course-tag">⏱ ${course.duration_mins} min</span>
+          <span class="course-tag">${totalSteps} exercises</span>
+        </div>
+      </div>
+      <div class="course-card-footer">
+        <div class="course-card-progress-wrap">
+          <div class="course-card-progress-label">${completedCount} / ${totalSteps} steps</div>
+          <div class="course-card-progress-track">
+            <div class="course-card-progress-fill" style="width:${pct}%"></div>
+          </div>
+        </div>
+        <button class="course-card-btn ${btnClass}">${btnLabel}</button>
+      </div>
+    `;
+    card.addEventListener("click", () => openCourseModal(course.id));
+    grid.appendChild(card);
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Courses — detail modal
+// ---------------------------------------------------------------------------
+function openCourseModal(courseId) {
+  const course = COURSES.find(c => c.id === courseId);
+  if (!course) return;
+  _activeCourseModal = courseId;
+
+  const prog           = _courseProgress[courseId];
+  const completedSteps = prog ? prog.completed_steps : new Set();
+  const stepScores     = prog ? prog.step_scores     : {};
+  const completedCount = completedSteps.size;
+  const totalSteps     = course.exercises.length;
+  const pct            = totalSteps > 0 ? Math.round((completedCount / totalSteps) * 100) : 0;
+
+  const AGE_MAP   = { all: "All Ages", adult: "18–60", "45plus": "45+", "60plus": "60+" };
+  const DIFF_MAP  = { beginner: "Beginner", intermediate: "Intermediate", advanced: "Advanced" };
+
+  document.getElementById("cm-title").textContent = course.emoji + "  " + course.title;
+  document.getElementById("cm-tags").innerHTML = `
+    <span class="course-tag ${course.difficulty}">${DIFF_MAP[course.difficulty]}</span>
+    <span class="course-tag">${AGE_MAP[course.age_group] || "All Ages"}</span>
+    <span class="course-tag">⏱ ${course.duration_mins} min</span>
+    <span class="course-tag">${totalSteps} exercises</span>
+  `;
+  document.getElementById("cm-desc").textContent = course.description;
+
+  const stepList = document.getElementById("cm-steps");
+  stepList.innerHTML = "";
+  course.exercises.forEach((ex, idx) => {
+    const done   = completedSteps.has(idx);
+    const score  = stepScores[idx];
+    // A step is unlocked if it's done OR if the previous step is done (or it's the first)
+    const unlocked = done || idx === 0 || completedSteps.has(idx - 1);
+
+    const item = document.createElement("div");
+    item.className = `course-step-item${done ? " done" : ""}`;
+    item.innerHTML = `
+      <div class="course-step-num ${done ? "done" : ""}">${done ? "✓" : idx + 1}</div>
+      <div class="course-step-icon">${ex.icon}</div>
+      <div class="course-step-info">
+        <div class="course-step-label">${ex.label}</div>
+        <div class="course-step-meta">${ex.sets} × ${ex.reps} reps</div>
+      </div>
+      ${done
+        ? `<div class="course-step-score">${score !== undefined ? score + "/100" : "✓"}</div>
+           <button class="course-step-btn done-btn" disabled>Done</button>`
+        : `<button class="course-step-btn" ${!unlocked ? 'disabled' : ''} onclick="startCourseStep('${courseId}',${idx})">Start</button>`
+      }
+    `;
+    stepList.appendChild(item);
+  });
+
+  document.getElementById("cm-progress-label").textContent = `${completedCount} / ${totalSteps} steps completed`;
+  document.getElementById("cm-progress-fill").style.width = pct + "%";
+
+  const resetBtn = document.getElementById("cm-reset-btn");
+  if (resetBtn) resetBtn.style.display = completedCount > 0 ? "" : "none";
+
+  document.getElementById("course-modal-overlay").classList.add("open");
+}
+
+function closeCourseModal() {
+  document.getElementById("course-modal-overlay")?.classList.remove("open");
+  _activeCourseModal = null;
+}
+
+// ---------------------------------------------------------------------------
+// Courses — start a step
+// ---------------------------------------------------------------------------
+function startCourseStep(courseId, stepIndex) {
+  const course = COURSES.find(c => c.id === courseId);
+  if (!course) return;
+  const step = course.exercises[stepIndex];
+  if (!step) return;
+
+  ui.activeCourse = { courseId, stepIndex };
+  closeCourseModal();
+  launchExercise(step.key);
+  toast(`Step ${stepIndex + 1}/${course.exercises.length}: ${step.label} — target ${step.reps} reps`, "info");
+}
+
+// ---------------------------------------------------------------------------
+// Courses — reset progress
+// ---------------------------------------------------------------------------
+function resetActiveCourse() {
+  if (!_activeCourseModal) return;
+  const courseId = _activeCourseModal;
+  delete _courseProgress[courseId];
+  if (backend) backend.reset_course(courseId);
+  openCourseModal(courseId);  // re-render modal with cleared state
+  renderCourses();
+  toast("Course progress reset.", "info");
+}
+
+// ---------------------------------------------------------------------------
+// Courses — log step when session finishes
+// ---------------------------------------------------------------------------
+function _logCourseStepIfActive(reps, score) {
+  if (!ui.activeCourse || !backend) return;
+  const { courseId, stepIndex } = ui.activeCourse;
+  ui.activeCourse = null;
+
+  if (!_courseProgress[courseId]) {
+    _courseProgress[courseId] = { completed_steps: new Set(), step_scores: {} };
+  }
+  _courseProgress[courseId].completed_steps.add(stepIndex);
+  _courseProgress[courseId].step_scores[stepIndex] = score;
+  renderCourses();
+
+  backend.log_course_step(courseId, stepIndex, JSON.stringify(reps), JSON.stringify(score));
+
+  const course = COURSES.find(c => c.id === courseId);
+  if (course) {
+    const allDone = _courseProgress[courseId].completed_steps.size >= course.exercises.length;
+    if (allDone) {
+      setTimeout(() => toast(`Course "${course.title}" complete!`, "success"), 600);
+    } else {
+      const next = stepIndex + 1;
+      if (next < course.exercises.length) {
+        setTimeout(() => toast(`Step ${stepIndex + 1} done! Next: ${course.exercises[next].label}`, "success"), 400);
+      }
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1206,6 +1565,7 @@ function submitPainScore() {
     report.avg_score || 0,
     JSON.stringify(report.details || [])
   );
+  _logCourseStepIfActive(report.reps || 0, report.avg_score || 0);
   // Re-fetch goals and achievements to reflect new session progress
   if (backend) {
     setTimeout(() => {
@@ -1263,6 +1623,31 @@ document.addEventListener("DOMContentLoaded", () => {
         backend.fetch_achievements();
       });
     });
+
+  // Render courses grid when opening courses page
+  document.querySelector(".nav-item[data-page='courses']")
+    ?.addEventListener("click", () => renderCourses());
+
+  // Course filter pills
+  document.querySelectorAll("#course-diff-filters .courses-filter-pill").forEach(pill => {
+    pill.addEventListener("click", () => {
+      document.querySelectorAll("#course-diff-filters .courses-filter-pill").forEach(p => p.classList.remove("active"));
+      pill.classList.add("active");
+      renderCourses();
+    });
+  });
+  document.querySelectorAll("#course-age-filters .courses-filter-pill").forEach(pill => {
+    pill.addEventListener("click", () => {
+      document.querySelectorAll("#course-age-filters .courses-filter-pill").forEach(p => p.classList.remove("active"));
+      pill.classList.add("active");
+      renderCourses();
+    });
+  });
+
+  // Course modal — close on overlay background click
+  document.getElementById("course-modal-overlay")?.addEventListener("click", (e) => {
+    if (e.target === e.currentTarget) closeCourseModal();
+  });
 
   // Goal modal — close on overlay background click
   document.getElementById("goal-modal-overlay")?.addEventListener("click", (e) => {

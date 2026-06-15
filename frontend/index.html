@@ -159,6 +159,207 @@
   .goal-modal-actions {
     display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px;
   }
+
+  /* ── Courses Page ─────────────────────────────────────────────────────── */
+  .courses-filter-bar {
+    display: flex; gap: 8px; align-items: center;
+    margin-bottom: 20px; flex-wrap: wrap;
+  }
+  .courses-filter-group {
+    display: flex; gap: 4px;
+    background: var(--bg-app); border: 1px solid var(--border);
+    border-radius: 8px; padding: 3px;
+  }
+  .courses-filter-sep { width: 1px; background: var(--border); margin: 0 4px; }
+  .courses-filter-pill {
+    padding: 5px 12px; border-radius: 6px; border: none;
+    background: transparent; font-size: 12px; font-weight: 600;
+    color: var(--text-secondary); cursor: pointer; white-space: nowrap;
+    transition: background 150ms ease, color 150ms ease;
+  }
+  .courses-filter-pill.active {
+    background: var(--bg-card); color: var(--text-primary);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  }
+  .courses-grid {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px;
+  }
+
+  /* Course Card */
+  .course-card {
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: var(--radius-md); box-shadow: var(--shadow-sm);
+    display: flex; flex-direction: column; overflow: hidden;
+    cursor: pointer; transition: transform 180ms ease, box-shadow 180ms ease;
+    animation: courseCardIn 280ms ease both;
+  }
+  .course-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); }
+  .course-card-accent { height: 3px; width: 100%; }
+  .course-card-accent.beginner     { background: var(--accent-green); }
+  .course-card-accent.intermediate { background: var(--accent-amber); }
+  .course-card-accent.advanced     { background: var(--accent-red); }
+  .course-card-body {
+    padding: 16px 18px; flex: 1;
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .course-card-top { display: flex; gap: 12px; align-items: flex-start; }
+  .course-card-emoji {
+    width: 44px; height: 44px; border-radius: 10px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center; font-size: 22px;
+  }
+  .course-card-emoji.beginner     { background: #ECFDF5; }
+  .course-card-emoji.intermediate { background: #FFFBEB; }
+  .course-card-emoji.advanced     { background: #FEF2F2; }
+  .course-card-title-wrap { flex: 1; }
+  .course-card-title {
+    font-size: 14px; font-weight: 700; color: var(--text-primary);
+    line-height: 1.3; margin-bottom: 3px;
+  }
+  .course-card-category {
+    font-size: 11px; color: var(--text-muted); font-weight: 500;
+    text-transform: uppercase; letter-spacing: 0.04em;
+  }
+  .course-card-desc {
+    font-size: 12px; color: var(--text-secondary); line-height: 1.5;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .course-card-tags { display: flex; gap: 6px; flex-wrap: wrap; }
+  .course-tag {
+    padding: 3px 8px; border-radius: 99px; font-size: 10px; font-weight: 600;
+    background: var(--bg-app); border: 1px solid var(--border);
+    color: var(--text-secondary); white-space: nowrap;
+  }
+  .course-tag.beginner     { background: #ECFDF5; border-color: #A7F3D0; color: #065F46; }
+  .course-tag.intermediate { background: #FFFBEB; border-color: #FDE68A; color: #78350F; }
+  .course-tag.advanced     { background: #FEF2F2; border-color: #FECACA; color: #7F1D1D; }
+  .course-card-footer {
+    padding: 11px 18px; border-top: 1px solid var(--border);
+    display: flex; align-items: center; gap: 12px;
+  }
+  .course-card-progress-wrap { flex: 1; }
+  .course-card-progress-label {
+    font-size: 10px; color: var(--text-muted); margin-bottom: 5px;
+    font-family: 'DM Mono', monospace;
+  }
+  .course-card-progress-track {
+    height: 4px; background: var(--border); border-radius: 99px; overflow: hidden;
+  }
+  .course-card-progress-fill {
+    height: 100%; border-radius: 99px; background: var(--accent-green);
+    transition: width 0.5s ease;
+  }
+  .course-card-btn {
+    padding: 7px 14px; border-radius: 7px; font-size: 12px; font-weight: 600;
+    border: 1px solid var(--border); background: var(--bg-card);
+    color: var(--text-primary); cursor: pointer; white-space: nowrap;
+    transition: background 150ms ease, color 150ms ease, border-color 150ms ease;
+  }
+  .course-card-btn:hover { background: var(--bg-app); border-color: var(--accent-blue); color: var(--accent-blue); }
+  .course-card-btn.primary { background: var(--accent-blue); color: #fff; border-color: var(--accent-blue); }
+  .course-card-btn.primary:hover { background: #1D4ED8; border-color: #1D4ED8; }
+  .course-card-btn.complete { background: var(--accent-green); color: #fff; border-color: var(--accent-green); cursor: default; }
+
+  /* Course Detail Modal */
+  .course-modal-overlay {
+    display: none; position: fixed; inset: 0;
+    background: rgba(15,23,42,0.6); z-index: 9000;
+    align-items: flex-end; justify-content: center;
+  }
+  .course-modal-overlay.open { display: flex; }
+  .course-modal {
+    background: var(--bg-card); width: 100%; max-width: 660px; max-height: 85vh;
+    overflow-y: auto; border-top-left-radius: 20px; border-top-right-radius: 20px;
+    border: 1px solid var(--border); border-bottom: none;
+    box-shadow: 0 -12px 40px rgba(0,0,0,0.14);
+    animation: courseModalIn 260ms cubic-bezier(0.32,0.72,0,1) both;
+  }
+  .course-modal-header {
+    padding: 20px 24px 14px; border-bottom: 1px solid var(--border);
+    position: sticky; top: 0; background: var(--bg-card); z-index: 1;
+  }
+  .course-modal-header-top {
+    display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 10px;
+  }
+  .course-modal-title { font-size: 17px; font-weight: 700; color: var(--text-primary); }
+  .course-modal-close {
+    width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--border);
+    background: transparent; cursor: pointer; display: flex;
+    align-items: center; justify-content: center;
+    color: var(--text-muted); font-size: 14px; transition: background 150ms ease;
+  }
+  .course-modal-close:hover { background: var(--bg-app); color: var(--text-primary); }
+  .course-modal-tags { display: flex; gap: 6px; flex-wrap: wrap; }
+  .course-modal-desc {
+    padding: 14px 24px; font-size: 13px; color: var(--text-secondary); line-height: 1.6;
+    border-bottom: 1px solid var(--border);
+  }
+  .course-modal-steps-label {
+    padding: 14px 24px 8px;
+    font-size: 11px; font-weight: 700; color: var(--text-muted);
+    text-transform: uppercase; letter-spacing: 0.05em;
+  }
+  .course-step-list { padding: 0 24px 4px; display: flex; flex-direction: column; gap: 8px; }
+  .course-step-item {
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px 14px; border-radius: 10px;
+    border: 1px solid var(--border); background: var(--bg-card);
+    transition: border-color 150ms ease, background 150ms ease;
+  }
+  .course-step-item.done { background: #F0FDF4; border-color: #A7F3D0; }
+  .course-step-num {
+    width: 26px; height: 26px; border-radius: 50%; flex-shrink: 0;
+    background: var(--bg-app); border: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 700; color: var(--text-muted);
+  }
+  .course-step-num.done { background: var(--accent-green); border-color: var(--accent-green); color: #fff; }
+  .course-step-icon { font-size: 20px; flex-shrink: 0; }
+  .course-step-info { flex: 1; }
+  .course-step-label { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+  .course-step-meta  { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+  .course-step-score {
+    font-family: 'DM Mono', monospace; font-size: 12px;
+    color: var(--accent-green); font-weight: 500; flex-shrink: 0;
+  }
+  .course-step-btn {
+    padding: 6px 13px; border-radius: 6px; font-size: 12px; font-weight: 600;
+    background: var(--accent-blue); color: #fff; border: none;
+    cursor: pointer; flex-shrink: 0; transition: background 150ms ease;
+  }
+  .course-step-btn:hover:not(:disabled) { background: #1D4ED8; }
+  .course-step-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+  .course-step-btn.done-btn {
+    background: transparent; color: var(--accent-green);
+    border: 1px solid var(--accent-green); cursor: default;
+  }
+  .course-modal-footer {
+    padding: 16px 24px 20px; border-top: 1px solid var(--border); margin-top: 8px;
+    display: flex; align-items: center; gap: 12px;
+  }
+  .course-modal-progress-wrap { flex: 1; }
+  .course-modal-progress-label {
+    font-size: 12px; color: var(--text-secondary); margin-bottom: 6px; font-weight: 600;
+  }
+  .course-modal-progress-track { height: 6px; background: var(--border); border-radius: 99px; overflow: hidden; }
+  .course-modal-progress-fill {
+    height: 100%; background: var(--accent-green); border-radius: 99px; transition: width 0.5s ease;
+  }
+  .course-reset-btn {
+    padding: 7px 14px; border-radius: 7px; font-size: 12px; font-weight: 600;
+    background: transparent; color: var(--text-muted); border: 1px solid var(--border);
+    cursor: pointer; transition: color 150ms ease, border-color 150ms ease;
+  }
+  .course-reset-btn:hover { color: var(--accent-red); border-color: var(--accent-red); }
+
+  @keyframes courseCardIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes courseModalIn {
+    from { transform: translateY(100%); }
+    to   { transform: translateY(0); }
+  }
 </style>
 </head>
 <body>
@@ -207,6 +408,38 @@
   </div>
 </div>
 
+
+<!-- ═══════════════════════════════════════════════════════════════
+     COURSE DETAIL MODAL  (bottom-sheet style)
+═══════════════════════════════════════════════════════════════ -->
+<div class="course-modal-overlay" id="course-modal-overlay">
+  <div class="course-modal" id="course-modal">
+
+    <div class="course-modal-header">
+      <div class="course-modal-header-top">
+        <div class="course-modal-title" id="cm-title"></div>
+        <button class="course-modal-close" onclick="closeCourseModal()">✕</button>
+      </div>
+      <div class="course-modal-tags" id="cm-tags"></div>
+    </div>
+
+    <div class="course-modal-desc" id="cm-desc"></div>
+
+    <div class="course-modal-steps-label">Exercise Plan</div>
+    <div class="course-step-list" id="cm-steps"></div>
+
+    <div class="course-modal-footer">
+      <div class="course-modal-progress-wrap">
+        <div class="course-modal-progress-label" id="cm-progress-label">0 / 0 steps completed</div>
+        <div class="course-modal-progress-track">
+          <div class="course-modal-progress-fill" id="cm-progress-fill" style="width:0%"></div>
+        </div>
+      </div>
+      <button class="course-reset-btn" id="cm-reset-btn" onclick="resetActiveCourse()" style="display:none">↺ Reset</button>
+    </div>
+
+  </div>
+</div>
 
 <div id="app">
 
@@ -275,6 +508,12 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="6"/><path d="M8.21 13.89L7 23l5-3 5 3-1.21-9.12"/></svg>
         </span>
         <span class="nav-label">Achievements</span>
+      </button>
+      <button class="nav-item" data-page="courses" data-tooltip="Courses">
+        <span class="nav-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+        </span>
+        <span class="nav-label">Courses</span>
       </button>
     </div>
 
@@ -631,6 +870,37 @@
     </div>
     <!-- /page-achievements -->
 
+
+    <!-- ─── PAGE: COURSES ───────────────────────────────────────── -->
+    <div class="page" id="page-courses">
+
+      <div class="page-header">
+        <div>
+          <div class="page-title">Courses</div>
+          <div class="page-subtitle">Structured rehab and fitness programs guided by AI form analysis.</div>
+        </div>
+      </div>
+
+      <div class="courses-filter-bar">
+        <div class="courses-filter-group" id="course-diff-filters">
+          <button class="courses-filter-pill active" data-diff="all">All</button>
+          <button class="courses-filter-pill" data-diff="beginner">Beginner</button>
+          <button class="courses-filter-pill" data-diff="intermediate">Intermediate</button>
+          <button class="courses-filter-pill" data-diff="advanced">Advanced</button>
+        </div>
+        <div class="courses-filter-sep"></div>
+        <div class="courses-filter-group" id="course-age-filters">
+          <button class="courses-filter-pill active" data-age="all">All Ages</button>
+          <button class="courses-filter-pill" data-age="adult">18–60</button>
+          <button class="courses-filter-pill" data-age="45plus">45+</button>
+          <button class="courses-filter-pill" data-age="60plus">60+</button>
+        </div>
+      </div>
+
+      <div class="courses-grid" id="courses-grid"></div>
+
+    </div>
+    <!-- /page-courses -->
 
     <!-- ─── PAGE: SETTINGS ─────────────────────────────────────── -->
     <div class="page" id="page-settings">
