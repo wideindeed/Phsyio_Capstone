@@ -1056,36 +1056,42 @@ function exportSessionToPDF(origIdx) {
 
   const pageEl = tmpl.querySelector(".cr-page");
 
-  // ── 5. Generate and save the PDF ─────────────────────────────────────────
+  function _restoreTemplate() {
+    tmpl.style.display    = "none";
+    tmpl.style.position   = "";
+    tmpl.style.left       = "";
+    tmpl.style.top        = "";
+    tmpl.style.visibility = "";
+  }
+
+  // ── 5. Render PDF as blob, then hand off to Python for the save dialog ───
   html2pdf()
     .set({
-      margin:   [15, 15, 15, 15],   // top, right, bottom, left in mm
+      margin:   [15, 15, 15, 15],
       filename: filename,
       image:    { type: "jpeg", quality: 0.98 },
-      html2canvas: {
-        scale: 2,                   // 2× for crisp text at high DPI
-        useCORS: true,
-        backgroundColor: "#FFFFFF",
-      },
-      jsPDF: {
-        unit:        "mm",
-        format:      "a4",
-        orientation: "portrait",
-      },
+      html2canvas: { scale: 2, useCORS: true, backgroundColor: "#FFFFFF" },
+      jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
     })
     .from(pageEl)
-    .save()
-    .then(() => {
-      // Restore the template to its hidden state
-      tmpl.style.display    = "none";
-      tmpl.style.position   = "";
-      tmpl.style.left       = "";
-      tmpl.style.top        = "";
-      tmpl.style.visibility = "";
-      toast(`PDF saved: ${filename}`, "success");
+    .output("blob")
+    .then((blob) => {
+      _restoreTemplate();
+      if (!backend) { toast("Backend not connected.", "error"); return; }
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const base64 = reader.result.split(",")[1];
+        backend.save_pdf(base64, filename, (resultStr) => {
+          const result = JSON.parse(resultStr);
+          if (result.cancelled) return;
+          if (result.ok) toast("PDF saved successfully.", "success");
+          else toast("PDF save failed.", "error");
+        });
+      };
+      reader.readAsDataURL(blob);
     })
     .catch((err) => {
-      tmpl.style.display = "none";
+      _restoreTemplate();
       console.error("[PDF Export]", err);
       toast("PDF export failed — see console for details.", "error");
     });

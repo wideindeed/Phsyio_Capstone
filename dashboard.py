@@ -263,6 +263,25 @@ class Bridge(QObject):
             "PARAM_ROUNDING":           state.PARAM_ROUNDING,
         })
 
+    @Slot(str, str, result=str)
+    def save_pdf(self, base64_data: str, suggested_name: str) -> str:
+        from PyQt5.QtWidgets import QFileDialog
+        import base64 as _b64
+        import os as _os
+        path, _ = QFileDialog.getSaveFileName(
+            None, "Save Clinical Report",
+            _os.path.expanduser(f"~/{suggested_name}"),
+            "PDF Files (*.pdf)"
+        )
+        if not path:
+            return json.dumps({"ok": False, "cancelled": True})
+        try:
+            with open(path, "wb") as f:
+                f.write(_b64.b64decode(base64_data))
+            return json.dumps({"ok": True, "path": path})
+        except Exception as e:
+            return json.dumps({"ok": False, "error": str(e)})
+
     @Slot(str, result=str)
     def export_history(self, json_str: str) -> str:
         from PyQt5.QtWidgets import QFileDialog
