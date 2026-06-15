@@ -95,7 +95,7 @@ html, body {
 }
 .brand-icon svg { width: 19px; height: 19px; }
 
-.brand-text { flex: 1; min-width: 0; overflow: hidden; }
+.brand-text { flex: 1; min-width: 0; overflow: hidden; margin-left: 11px; /* Adds the missing space */ }
 
 .brand-name {
   font-size: 14px; font-weight: 700; letter-spacing: -0.3px;
@@ -136,7 +136,7 @@ html, body {
   font-weight: 700; font-size: 13px; color: #fff; flex-shrink: 0;
 }
 
-.user-info { flex: 1; min-width: 0; overflow: hidden; }
+.user-info { flex: 1; min-width: 0; overflow: hidden; margin-left: 11px; /* Adds the missing space */ }
 .user-name  { font-size: 13px; font-weight: 600; color: var(--text-primary); white-space: nowrap; }
 .user-role  { font-size: 11px; color: var(--text-muted); margin-top: 1px; white-space: nowrap; }
 
@@ -153,6 +153,10 @@ html, body {
   color: var(--text-secondary); font-size: 13px; font-weight: 500;
   border: none; background: transparent; width: 100%; text-align: left;
   outline: none; white-space: nowrap; overflow: hidden; position: relative;
+}
+
+.nav-label {
+  margin-left: 11px;
 }
 
 .nav-item .nav-icon {
