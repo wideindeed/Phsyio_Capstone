@@ -215,46 +215,76 @@
   ═══════════════════════════════════════════════════════════════ -->
   <nav id="sidebar">
 
-    <div class="sidebar-logo">
-      <div class="logo-icon">⚕</div>
-      <div>
-        <div class="logo-text">Physio-Vision</div>
-        <div class="logo-sub">Clinical AI Platform</div>
+    <!-- Brand -->
+    <div class="sidebar-brand">
+      <div class="brand-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
       </div>
+      <div class="brand-text">
+        <div class="brand-name">Physio-Vision</div>
+        <div class="brand-sub">Clinical AI Platform</div>
+      </div>
+      <button id="sidebar-toggle" class="sidebar-toggle" title="Toggle sidebar">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+      </button>
     </div>
 
+    <!-- User card -->
     <div class="sidebar-user">
       <div class="user-avatar">U</div>
-      <div>
+      <div class="user-info">
         <div class="user-name">User</div>
         <div class="user-role">Patient</div>
       </div>
     </div>
 
+    <!-- Navigation -->
     <div class="sidebar-nav">
-      <button class="nav-item active" data-page="hub">
-        <span class="nav-icon">🏠</span> Hub
+      <button class="nav-item active" data-page="hub" data-tooltip="Hub">
+        <span class="nav-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11l8-7 8 7v9a1 1 0 01-1 1H5a1 1 0 01-1-1z"/><path d="M9 22V12h6v10"/></svg>
+        </span>
+        <span class="nav-label">Hub</span>
       </button>
-      <button class="nav-item" data-page="analysis">
-        <span class="nav-icon">📹</span> Live Analysis
+      <button class="nav-item" data-page="analysis" data-tooltip="Live Analysis">
+        <span class="nav-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="13" height="10" rx="2"/><path d="M16 11l5-3v8l-5-3"/></svg>
+        </span>
+        <span class="nav-label">Live Analysis</span>
       </button>
-      <button class="nav-item" data-page="records">
-        <span class="nav-icon">🫀</span> Patient Records
+      <button class="nav-item" data-page="records" data-tooltip="Patient Records">
+        <span class="nav-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><line x1="10" y1="9" x2="8" y2="9"/></svg>
+        </span>
+        <span class="nav-label">Patient Records</span>
       </button>
-      <button class="nav-item" data-page="analytics">
-        <span class="nav-icon">📈</span> Analytics
+      <button class="nav-item" data-page="analytics" data-tooltip="Analytics">
+        <span class="nav-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/><polyline points="2 20 22 20"/></svg>
+        </span>
+        <span class="nav-label">Analytics</span>
       </button>
-      <button class="nav-item" data-page="goals">
-        <span class="nav-icon">🎯</span> Goals
+      <button class="nav-item" data-page="goals" data-tooltip="Goals">
+        <span class="nav-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
+        </span>
+        <span class="nav-label">Goals</span>
       </button>
-      <button class="nav-item" data-page="achievements">
-        <span class="nav-icon">🏅</span> Achievements
+      <button class="nav-item" data-page="achievements" data-tooltip="Achievements">
+        <span class="nav-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="6"/><path d="M8.21 13.89L7 23l5-3 5 3-1.21-9.12"/></svg>
+        </span>
+        <span class="nav-label">Achievements</span>
       </button>
     </div>
 
+    <!-- Bottom -->
     <div class="sidebar-bottom">
-      <button class="nav-item" data-page="settings">
-        <span class="nav-icon">⚙</span> Settings
+      <button class="nav-item" data-page="settings" data-tooltip="Settings">
+        <span class="nav-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"/></svg>
+        </span>
+        <span class="nav-label">Settings</span>
       </button>
     </div>
   </nav>

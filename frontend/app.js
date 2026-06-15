@@ -123,9 +123,12 @@ function launchExercise(key) {
 // ---------------------------------------------------------------------------
 function initUi(s) {
   // Avatar / greeting
-  const initial = (s.username || "U")[0].toUpperCase();
+  const rawName = s.username || "User";
+  // Capitalize the first letter of each word so a raw db string ("test") shows as "Test"
+  const displayName = rawName.replace(/\b\w/g, c => c.toUpperCase());
+  const initial = displayName[0].toUpperCase();
   document.querySelectorAll(".user-avatar").forEach(el => el.textContent = initial);
-  document.querySelectorAll(".user-name").forEach(el => el.textContent = s.username || "User");
+  document.querySelectorAll(".user-name").forEach(el => el.textContent = displayName);
 
   // Profile section
   const profileEl = document.getElementById("profile-username");
@@ -1235,6 +1238,17 @@ function toast(msg, type = "info") {
 // DOM ready
 // ---------------------------------------------------------------------------
 document.addEventListener("DOMContentLoaded", () => {
+  // Sidebar collapse toggle — persists across sessions via localStorage
+  const sidebar = document.getElementById("sidebar");
+  const toggleBtn = document.getElementById("sidebar-toggle");
+  if (sidebar && toggleBtn) {
+    if (localStorage.getItem("sidebarCollapsed") === "1") sidebar.classList.add("collapsed");
+    toggleBtn.addEventListener("click", () => {
+      sidebar.classList.toggle("collapsed");
+      localStorage.setItem("sidebarCollapsed", sidebar.classList.contains("collapsed") ? "1" : "0");
+    });
+  }
+
   // Navigation buttons
   document.querySelectorAll(".nav-item").forEach(btn => {
     btn.addEventListener("click", () => navigate(btn.dataset.page));
