@@ -64,7 +64,9 @@ const EXERCISES = [
   { key: "lateral_raise",   title: "Lateral Raise", desc: "Shoulder abduction & symmetry analysis",          icon: "🙆" },
   { key: "knee_extension",  title: "Knee Extension", desc: "Seated straight-leg raise & ROM analysis",       icon: "🦵" },
   { key: "wall_pushup",     title: "Wall Push-Up",   desc: "Upper body & shoulder mobility analysis",        icon: "🤜" },
-  { key: "hip_march",       title: "Hip March",      desc: "Hip flexor mobility & symmetry analysis",        icon: "🏃" },
+  { key: "hip_march",          title: "Hip March",          desc: "Hip flexor mobility & symmetry analysis",         icon: "🏃" },
+  { key: "shoulder_extension", title: "Shoulder Extension", desc: "Standing shoulder extension & posture analysis",   icon: "🔙" },
+  { key: "shoulder_scaption",  title: "Shoulder Scaption",  desc: "Diagonal Y-raise & rotator cuff analysis",         icon: "🙌" },
 ];
 
 const EXERCISE_LABELS = Object.fromEntries(EXERCISES.map(e => [e.key, e.title]));

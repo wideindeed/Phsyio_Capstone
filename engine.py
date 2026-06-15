@@ -19,9 +19,11 @@ from PyQt5.QtGui import QImage
 from mediapipe.python.solutions import pose as mp_pose
 from mediapipe.python.solutions import drawing_utils as mp_drawing
 
-from knee_extension_analyzer import KneeExtensionAnalyzer, set_model as set_knee_model
-from wall_pushup_analyzer    import WallPushupAnalyzer,    set_model as set_wall_model
-from hip_march_analyzer      import HipMarchAnalyzer,      set_model as set_hip_model
+from knee_extension_analyzer      import KneeExtensionAnalyzer,      set_model as set_knee_model
+from wall_pushup_analyzer         import WallPushupAnalyzer,         set_model as set_wall_model
+from hip_march_analyzer           import HipMarchAnalyzer,           set_model as set_hip_model
+from shoulder_extension_analyzer  import ShoulderExtensionAnalyzer,  set_model as set_shoulder_ext_model
+from shoulder_scaption_analyzer   import ShoulderScaptionAnalyzer,   set_model as set_shoulder_sca_model
 
 
 # =============================================================================
@@ -459,6 +461,28 @@ try:
 except Exception as e:
     print(f"[Physio-Vision] ERROR loading Hip March model: {e}")
 
+try:
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    _path = os.path.join(current_dir, "shoulder_extension_robust.keras")
+    if os.path.exists(_path):
+        set_shoulder_ext_model(tf.keras.models.load_model(_path))
+        print("[Physio-Vision] SUCCESS: Shoulder Extension model loaded.")
+    else:
+        print("[Physio-Vision] WARNING: shoulder_extension_robust.keras not found.")
+except Exception as e:
+    print(f"[Physio-Vision] ERROR loading Shoulder Extension model: {e}")
+
+try:
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    _path = os.path.join(current_dir, "shoulder_scaption_robust.keras")
+    if os.path.exists(_path):
+        set_shoulder_sca_model(tf.keras.models.load_model(_path))
+        print("[Physio-Vision] SUCCESS: Shoulder Scaption model loaded.")
+    else:
+        print("[Physio-Vision] WARNING: shoulder_scaption_robust.keras not found.")
+except Exception as e:
+    print(f"[Physio-Vision] ERROR loading Shoulder Scaption model: {e}")
+
 
 # --- 2. NORMALIZATION FUNCTIONS ---
 def normalize_skeleton_squat_live(frames_list):
@@ -601,9 +625,11 @@ class VisionWorker(QThread):
             min_detection_confidence=state.MP_DETECTION_CONFIDENCE,
             min_tracking_confidence=state.MP_TRACKING_CONFIDENCE
         )
-        self._knee_analyzer  = KneeExtensionAnalyzer()
-        self._wall_analyzer  = WallPushupAnalyzer()
-        self._hip_analyzer   = HipMarchAnalyzer()
+        self._knee_analyzer          = KneeExtensionAnalyzer()
+        self._wall_analyzer          = WallPushupAnalyzer()
+        self._hip_analyzer           = HipMarchAnalyzer()
+        self._shoulder_ext_analyzer  = ShoulderExtensionAnalyzer()
+        self._shoulder_sca_analyzer  = ShoulderScaptionAnalyzer()
         self.current_state = self.STATE_CALIB
         self.reset_session()
 
@@ -632,6 +658,8 @@ class VisionWorker(QThread):
         self._knee_analyzer.reset()
         self._wall_analyzer.reset()
         self._hip_analyzer.reset()
+        self._shoulder_ext_analyzer.reset()
+        self._shoulder_sca_analyzer.reset()
 
     # ------------------------------------------------------------------
     # Main loop
@@ -718,7 +746,8 @@ class VisionWorker(QThread):
         # ==========================================
         if self.current_state == self.STATE_CALIB:
             if self.exercise_mode in ("pushup", "lateral_raise",
-                                      "knee_extension", "wall_pushup", "hip_march"):
+                                      "knee_extension", "wall_pushup", "hip_march",
+                                      "shoulder_extension", "shoulder_scaption"):
                 self.current_state = self.STATE_SESSION
                 speak_async("System Ready.")
             elif not is_profile_view(landmarks_2d):
@@ -1211,6 +1240,14 @@ class VisionWorker(QThread):
 
             if self.exercise_mode == "hip_march":
                 self._hip_analyzer.process(landmarks_3d, self)
+                return
+
+            if self.exercise_mode == "shoulder_extension":
+                self._shoulder_ext_analyzer.process(landmarks_3d, self)
+                return
+
+            if self.exercise_mode == "shoulder_scaption":
+                self._shoulder_sca_analyzer.process(landmarks_3d, self)
                 return
 
             # Simple heuristic triggers
