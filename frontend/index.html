@@ -600,7 +600,70 @@
 
       <div class="settings-grid">
 
-        <!-- Biometrics -->
+        <!-- ── Profile / Account ───────────────────────────────── -->
+        <div class="settings-section">
+          <div class="settings-section-title">Profile / Account</div>
+
+          <div class="setting-row">
+            <div>
+              <div class="setting-label">Display Name</div>
+              <div class="setting-sub">Shown on reports and the sidebar</div>
+            </div>
+            <span class="setting-mono" id="profile-username">—</span>
+          </div>
+
+          <div class="setting-row">
+            <div>
+              <div class="setting-label">Change Password</div>
+              <div class="setting-sub">Update via the web portal</div>
+            </div>
+            <button class="btn btn-ghost btn-sm" onclick="changePassword()">Change…</button>
+          </div>
+        </div>
+
+        <!-- ── Appearance ──────────────────────────────────────── -->
+        <div class="settings-section">
+          <div class="settings-section-title">Appearance</div>
+
+          <div class="setting-row">
+            <div>
+              <div class="setting-label">Dark Mode</div>
+              <div class="setting-sub">Toggle light / dark UI theme</div>
+            </div>
+            <label class="toggle-switch">
+              <input type="checkbox" id="dark-mode-toggle">
+              <span class="toggle-track"></span>
+              <span class="toggle-thumb"></span>
+            </label>
+          </div>
+
+          <div class="setting-row">
+            <div>
+              <div class="setting-label">Accent Colour</div>
+              <div class="setting-sub">Primary action &amp; highlight colour</div>
+            </div>
+            <div class="accent-swatches">
+              <button class="accent-swatch active" data-accent="#2563EB" style="background:#2563EB" title="Blue"></button>
+              <button class="accent-swatch" data-accent="#0284C7" style="background:#0284C7" title="Sky"></button>
+              <button class="accent-swatch" data-accent="#7C3AED" style="background:#7C3AED" title="Purple"></button>
+              <button class="accent-swatch" data-accent="#10B981" style="background:#10B981" title="Green"></button>
+              <button class="accent-swatch" data-accent="#F59E0B" style="background:#F59E0B" title="Amber"></button>
+            </div>
+          </div>
+
+          <div class="setting-row">
+            <div>
+              <div class="setting-label">Font Size</div>
+              <div class="setting-sub">UI text scale</div>
+            </div>
+            <div class="setting-slider-wrap">
+              <input type="range" id="font-size-slider" min="12" max="18" step="1" value="14">
+              <span class="setting-slider-val" id="font-size-val">14 px</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── Patient Biometrics ──────────────────────────────── -->
         <div class="settings-section">
           <div class="settings-section-title">Patient Biometrics</div>
 
@@ -627,7 +690,7 @@
           </div>
         </div>
 
-        <!-- System -->
+        <!-- ── System ──────────────────────────────────────────── -->
         <div class="settings-section">
           <div class="settings-section-title">System</div>
 
@@ -656,26 +719,223 @@
           </div>
         </div>
 
-        <!-- Engine info (read-only) -->
+        <!-- ── Camera & Capture ────────────────────────────────── -->
+        <div class="settings-section">
+          <div class="settings-section-title">Camera &amp; Capture</div>
+
+          <div class="setting-row">
+            <div>
+              <div class="setting-label">Camera Source</div>
+              <div class="setting-sub">Device index · takes effect on next session</div>
+            </div>
+            <select class="setting-select" id="camera-select">
+              <option value="0">Camera 0 (default)</option>
+              <option value="1">Camera 1</option>
+              <option value="2">Camera 2</option>
+              <option value="3">Camera 3</option>
+            </select>
+          </div>
+
+          <div class="setting-row">
+            <div>
+              <div class="setting-label">Mirror Video</div>
+              <div class="setting-sub">Horizontally flip the camera feed</div>
+            </div>
+            <label class="toggle-switch">
+              <input type="checkbox" id="mirror-toggle" checked>
+              <span class="toggle-track"></span>
+              <span class="toggle-thumb"></span>
+            </label>
+          </div>
+        </div>
+
+        <!-- ── Notifications & Session ────────────────────────── -->
+        <div class="settings-section">
+          <div class="settings-section-title">Notifications &amp; Session</div>
+
+          <div class="setting-row">
+            <div>
+              <div class="setting-label">Pain Score Prompt</div>
+              <div class="setting-sub">Ask for pain rating after every session</div>
+            </div>
+            <label class="toggle-switch">
+              <input type="checkbox" id="pain-prompt-toggle" checked>
+              <span class="toggle-track"></span>
+              <span class="toggle-thumb"></span>
+            </label>
+          </div>
+
+          <div class="setting-row">
+            <div>
+              <div class="setting-label">Auto-Stop Timer</div>
+              <div class="setting-sub">End session automatically after this time</div>
+            </div>
+            <div class="setting-slider-wrap">
+              <input type="range" id="session-timeout-slider" min="0" max="30" step="5" value="0">
+              <span class="setting-slider-val" id="session-timeout-val">Off</span>
+            </div>
+          </div>
+
+          <div class="setting-row">
+            <div>
+              <div class="setting-label">Default Rep Target</div>
+              <div class="setting-sub">Target reps shown during session</div>
+            </div>
+            <div class="setting-slider-wrap">
+              <input type="range" id="rep-target-slider" min="0" max="30" step="5" value="0">
+              <span class="setting-slider-val" id="rep-target-val">None</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── Analysis Thresholds (Advanced, full-width) ─────── -->
+        <div class="settings-section settings-section-full">
+          <div class="settings-section-title">
+            Analysis Thresholds
+            <span class="settings-section-note">Takes effect on next session start</span>
+          </div>
+
+          <div class="setting-row difficulty-row">
+            <div>
+              <div class="setting-label">Difficulty Preset</div>
+              <div class="setting-sub">Adjusts squat depth, lean, and rounding thresholds at once</div>
+            </div>
+            <div class="difficulty-pills">
+              <button class="difficulty-pill" id="diff-easy"   onclick="setDifficulty('easy')">Easy</button>
+              <button class="difficulty-pill active" id="diff-normal" onclick="setDifficulty('normal')">Normal</button>
+              <button class="difficulty-pill" id="diff-strict" onclick="setDifficulty('strict')">Strict</button>
+            </div>
+          </div>
+
+          <details class="advanced-details">
+            <summary class="advanced-summary">Advanced Thresholds &amp; MediaPipe</summary>
+            <div class="advanced-body">
+              <div class="advanced-grid">
+
+                <div class="setting-row">
+                  <div>
+                    <div class="setting-label">Squat Depth Angle</div>
+                    <div class="setting-sub">Knee angle counted as "down"</div>
+                  </div>
+                  <div class="setting-slider-wrap">
+                    <input type="range" id="squat-depth-slider" min="100" max="160" step="5" value="140">
+                    <span class="setting-slider-val" id="squat-depth-val">140°</span>
+                  </div>
+                </div>
+
+                <div class="setting-row">
+                  <div>
+                    <div class="setting-label">Forward Lean Warning</div>
+                    <div class="setting-sub">Trunk lean degrees → warning</div>
+                  </div>
+                  <div class="setting-slider-wrap">
+                    <input type="range" id="lean-warn-slider" min="20" max="60" step="2" value="40">
+                    <span class="setting-slider-val" id="lean-warn-val">40°</span>
+                  </div>
+                </div>
+
+                <div class="setting-row">
+                  <div>
+                    <div class="setting-label">Critical Lean Angle</div>
+                    <div class="setting-sub">Trunk lean degrees → critical</div>
+                  </div>
+                  <div class="setting-slider-wrap">
+                    <input type="range" id="lean-crit-slider" min="30" max="75" step="2" value="55">
+                    <span class="setting-slider-val" id="lean-crit-val">55°</span>
+                  </div>
+                </div>
+
+                <div class="setting-row">
+                  <div>
+                    <div class="setting-label">Back Rounding Limit</div>
+                    <div class="setting-sub">Max back curvature degrees allowed</div>
+                  </div>
+                  <div class="setting-slider-wrap">
+                    <input type="range" id="rounding-slider" min="5" max="35" step="1" value="18">
+                    <span class="setting-slider-val" id="rounding-val">18°</span>
+                  </div>
+                </div>
+
+                <div class="setting-row">
+                  <div>
+                    <div class="setting-label">MP Detection Confidence</div>
+                    <div class="setting-sub">MediaPipe min detection threshold</div>
+                  </div>
+                  <div class="setting-slider-wrap">
+                    <input type="range" id="mp-detect-slider" min="0.3" max="0.9" step="0.05" value="0.5">
+                    <span class="setting-slider-val" id="mp-detect-val">0.50</span>
+                  </div>
+                </div>
+
+                <div class="setting-row">
+                  <div>
+                    <div class="setting-label">MP Tracking Confidence</div>
+                    <div class="setting-sub">MediaPipe min tracking threshold</div>
+                  </div>
+                  <div class="setting-slider-wrap">
+                    <input type="range" id="mp-track-slider" min="0.3" max="0.9" step="0.05" value="0.5">
+                    <span class="setting-slider-val" id="mp-track-val">0.50</span>
+                  </div>
+                </div>
+
+              </div><!-- /advanced-grid -->
+            </div><!-- /advanced-body -->
+          </details>
+        </div>
+
+        <!-- ── Data & Privacy ──────────────────────────────────── -->
+        <div class="settings-section">
+          <div class="settings-section-title">Data &amp; Privacy</div>
+
+          <div class="setting-row">
+            <div>
+              <div class="setting-label">Export Session Data</div>
+              <div class="setting-sub">Save all sessions as a JSON file</div>
+            </div>
+            <button class="btn btn-ghost btn-sm" onclick="exportData()">Export…</button>
+          </div>
+
+          <div class="setting-row">
+            <div>
+              <div class="setting-label">Cloud Sync</div>
+              <div class="setting-sub">Sessions auto-sync on submit</div>
+            </div>
+            <span class="sync-status-pill">
+              <span class="dot"></span> Live
+            </span>
+          </div>
+
+          <div class="setting-row">
+            <div>
+              <div class="setting-label">Clear Session History</div>
+              <div class="setting-sub">Permanently removes all records</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px">
+              <div id="clear-history-confirm" class="inline-confirm hidden">
+                <span style="font-size:11px;color:var(--accent-red);font-weight:600">Sure?</span>
+                <button class="btn btn-sm" style="background:var(--accent-red);color:#fff;border-color:var(--accent-red);padding:4px 10px" onclick="confirmClearHistory()">Yes</button>
+                <button class="btn btn-ghost btn-sm" onclick="cancelClearHistory()">No</button>
+              </div>
+              <button class="btn btn-danger btn-sm" id="clear-history-btn" onclick="clearHistory()">Clear…</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── Engine Info (read-only) ─────────────────────────── -->
         <div class="settings-section">
           <div class="settings-section-title">Engine Info</div>
+
           <div class="setting-row">
             <div class="setting-label">Backend</div>
-            <div style="font-family:'DM Mono',monospace;font-size:12px;color:var(--text-secondary)">
-              engine.py / VisionWorker
-            </div>
+            <span class="setting-mono">engine.py / VisionWorker</span>
           </div>
           <div class="setting-row">
             <div class="setting-label">Video Source</div>
-            <div style="font-family:'DM Mono',monospace;font-size:12px;color:var(--text-secondary)">
-              MJPEG · 127.0.0.1:5050
-            </div>
+            <span class="setting-mono">MJPEG · 127.0.0.1:5050</span>
           </div>
           <div class="setting-row">
             <div class="setting-label">Data Channel</div>
-            <div style="font-family:'DM Mono',monospace;font-size:12px;color:var(--text-secondary)">
-              QWebChannel (qt.webChannelTransport)
-            </div>
+            <span class="setting-mono">QWebChannel</span>
           </div>
         </div>
 

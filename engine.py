@@ -63,6 +63,17 @@ class AppState:
     PARAM_LATERAL_RAISE_ASYMMETRY_TOL: float = 18.0  # Max L/R peak-angle difference (degrees)
     PARAM_LATERAL_RAISE_SHRUG_RATIO: float = 0.65  # Shrug if ear-shoulder dist drops below this × baseline
 
+    # --- Camera & Capture ---
+    CAMERA_INDEX: int = 0
+    MP_DETECTION_CONFIDENCE: float = 0.5
+    MP_TRACKING_CONFIDENCE: float = 0.5
+    MIRROR_VIDEO: bool = True
+
+    # --- Session & Notifications ---
+    PAIN_PROMPT_ENABLED: bool = True
+    SESSION_TIMEOUT_MINS: int = 0
+    DEFAULT_REP_TARGET: int = 0
+
     # --- Session History (in-memory, not persisted) ---
     HISTORY: list = []
 
@@ -586,7 +597,10 @@ class VisionWorker(QThread):
         super().__init__()
         self.running = False
         self.exercise_mode = "squat"  # Default, UI will change this
-        self.pose = mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5)
+        self.pose = mp_pose.Pose(
+            min_detection_confidence=state.MP_DETECTION_CONFIDENCE,
+            min_tracking_confidence=state.MP_TRACKING_CONFIDENCE
+        )
         self._knee_analyzer  = KneeExtensionAnalyzer()
         self._wall_analyzer  = WallPushupAnalyzer()
         self._hip_analyzer   = HipMarchAnalyzer()
@@ -625,9 +639,9 @@ class VisionWorker(QThread):
     def run(self) -> None:
         # Use CAP_DSHOW on Windows to fix instant-crash / black screen issues
         if os.name == 'nt':
-            self.cap = cv2.VideoCapture(1, cv2.CAP_DSHOW)
+            self.cap = cv2.VideoCapture(state.CAMERA_INDEX, cv2.CAP_DSHOW)
         else:
-            self.cap = cv2.VideoCapture(1)
+            self.cap = cv2.VideoCapture(state.CAMERA_INDEX)
 
         # ── THE BUG FIX: Check if camera actually opened ──
         if not self.cap.isOpened():
@@ -654,7 +668,11 @@ class VisionWorker(QThread):
             if not ret:
                 break
 
-            frame = cv2.flip(frame, 1)
+            if state.SESSION_TIMEOUT_MINS > 0 and self.start_time:
+                if (datetime.now() - self.start_time).total_seconds() / 60 >= state.SESSION_TIMEOUT_MINS:
+                    break
+            if state.MIRROR_VIDEO:
+                frame = cv2.flip(frame, 1)
             rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             h, w, ch = rgb_frame.shape
             results = self.pose.process(rgb_frame)

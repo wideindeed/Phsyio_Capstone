@@ -245,12 +245,54 @@ class Bridge(QObject):
     @Slot(result=str)
     def get_initial_state(self) -> str:
         return json.dumps({
-            "username":       self._username,
-            "USER_HEIGHT_CM": state.USER_HEIGHT_CM,
-            "USER_WEIGHT_KG": state.USER_WEIGHT_KG,
-            "VOICE_ON":       state.VOICE_ON,
-            "AR_MODE":        state.AR_MODE,
+            "username":                 self._username,
+            "USER_HEIGHT_CM":           state.USER_HEIGHT_CM,
+            "USER_WEIGHT_KG":           state.USER_WEIGHT_KG,
+            "VOICE_ON":                 state.VOICE_ON,
+            "AR_MODE":                  state.AR_MODE,
+            "CAMERA_INDEX":             state.CAMERA_INDEX,
+            "MP_DETECTION_CONFIDENCE":  state.MP_DETECTION_CONFIDENCE,
+            "MP_TRACKING_CONFIDENCE":   state.MP_TRACKING_CONFIDENCE,
+            "MIRROR_VIDEO":             state.MIRROR_VIDEO,
+            "PAIN_PROMPT_ENABLED":      state.PAIN_PROMPT_ENABLED,
+            "SESSION_TIMEOUT_MINS":     state.SESSION_TIMEOUT_MINS,
+            "DEFAULT_REP_TARGET":       state.DEFAULT_REP_TARGET,
+            "PARAM_SQUAT_DEPTH":        state.PARAM_SQUAT_DEPTH,
+            "PARAM_LEAN_WARN":          state.PARAM_LEAN_WARN,
+            "PARAM_LEAN_CRIT":          state.PARAM_LEAN_CRIT,
+            "PARAM_ROUNDING":           state.PARAM_ROUNDING,
         })
+
+    @Slot(str, result=str)
+    def export_history(self, json_str: str) -> str:
+        from PyQt5.QtWidgets import QFileDialog
+        import os as _os
+        path, _ = QFileDialog.getSaveFileName(
+            None, "Export Session Data",
+            _os.path.expanduser("~/physiovision_export.json"),
+            "JSON Files (*.json)"
+        )
+        if not path:
+            return json.dumps({"ok": False, "cancelled": True})
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(json_str)
+            return json.dumps({"ok": True})
+        except Exception as e:
+            return json.dumps({"ok": False, "error": str(e)})
+
+    @Slot(result=str)
+    def clear_history(self) -> str:
+        try:
+            headers = {
+                "Authorization": f"Bearer {self._token}",
+                "X-Desktop-Key": "my_secret_desktop_key_2026"
+            }
+            resp = requests.delete(f"{API_URL}/clear_history", headers=headers, timeout=5)
+            return json.dumps({"ok": resp.ok})
+        except Exception as e:
+            print(f"[Bridge] clear_history error: {e}")
+            return json.dumps({"ok": False})
 
     @Slot(str, str, int, int, str)
     def submit_pain_score(self, pain_str: str, exercise: str,

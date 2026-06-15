@@ -39,9 +39,10 @@ new QWebChannel(qt.webChannelTransport, (channel) => {
 // ---------------------------------------------------------------------------
 const ui = {
   currentPage: "hub",
-  currentExercise: null,    // key: "squat" | "sts" | "pushup" | "curl" | "lateral_raise"
+  currentExercise: null,
   sessionRunning: false,
-  lastReport: null,         // holds report dict while pain dialog is open
+  lastReport: null,
+  painPromptEnabled: true,
 };
 
 // Tracks the live Chart.js instance so we can destroy it cleanly before
@@ -119,16 +120,51 @@ function launchExercise(key) {
 // Initialise UI from Python state
 // ---------------------------------------------------------------------------
 function initUi(s) {
-  // Set username avatar / greeting
+  // Avatar / greeting
   const initial = (s.username || "U")[0].toUpperCase();
   document.querySelectorAll(".user-avatar").forEach(el => el.textContent = initial);
   document.querySelectorAll(".user-name").forEach(el => el.textContent = s.username || "User");
 
-  // Settings sliders & toggles
-  setSlider("height-slider", "height-val", s.USER_HEIGHT_CM, (v) => `${v} cm`);
-  setSlider("weight-slider", "weight-val", s.USER_WEIGHT_KG, (v) => `${v} kg`);
+  // Profile section
+  const profileEl = document.getElementById("profile-username");
+  if (profileEl) profileEl.textContent = s.username || "—";
+
+  // Existing biometrics & system
+  setSlider("height-slider", "height-val", s.USER_HEIGHT_CM, v => `${v} cm`);
+  setSlider("weight-slider", "weight-val", s.USER_WEIGHT_KG, v => `${v} kg`);
   setToggle("voice-toggle", s.VOICE_ON);
   setToggle("ar-toggle",    s.AR_MODE);
+
+  // Camera & Capture
+  const camSel = document.getElementById("camera-select");
+  if (camSel) camSel.value = s.CAMERA_INDEX ?? 0;
+  setToggle("mirror-toggle", s.MIRROR_VIDEO !== false);
+
+  // Notifications & Session
+  setToggle("pain-prompt-toggle", s.PAIN_PROMPT_ENABLED !== false);
+  ui.painPromptEnabled = s.PAIN_PROMPT_ENABLED !== false;
+  setSlider("session-timeout-slider", "session-timeout-val", s.SESSION_TIMEOUT_MINS ?? 0,
+    v => parseInt(v) === 0 ? "Off" : `${v} min`);
+  setSlider("rep-target-slider", "rep-target-val", s.DEFAULT_REP_TARGET ?? 0,
+    v => parseInt(v) === 0 ? "None" : String(parseInt(v)));
+
+  // Advanced thresholds
+  setSlider("squat-depth-slider", "squat-depth-val", s.PARAM_SQUAT_DEPTH ?? 140, v => `${v}°`);
+  setSlider("lean-warn-slider",   "lean-warn-val",   s.PARAM_LEAN_WARN   ?? 40,  v => `${v}°`);
+  setSlider("lean-crit-slider",   "lean-crit-val",   s.PARAM_LEAN_CRIT   ?? 55,  v => `${v}°`);
+  setSlider("rounding-slider",    "rounding-val",    s.PARAM_ROUNDING    ?? 18,  v => `${v}°`);
+  setSlider("mp-detect-slider",   "mp-detect-val",   s.MP_DETECTION_CONFIDENCE ?? 0.5,
+    v => parseFloat(v).toFixed(2));
+  setSlider("mp-track-slider",    "mp-track-val",    s.MP_TRACKING_CONFIDENCE  ?? 0.5,
+    v => parseFloat(v).toFixed(2));
+
+  // Restore client-side preferences from localStorage
+  const savedTheme  = localStorage.getItem("pv-theme");
+  const savedAccent = localStorage.getItem("pv-accent");
+  const savedSize   = localStorage.getItem("pv-font-size");
+  if (savedTheme === "dark") applyTheme(true, false);
+  if (savedAccent) applyAccent(savedAccent, false);
+  if (savedSize)   applyFontSize(parseFloat(savedSize), false);
 }
 
 function setSlider(sliderId, valId, value, fmt) {
@@ -145,8 +181,109 @@ function setToggle(toggleId, value) {
 }
 
 // ---------------------------------------------------------------------------
+// Appearance helpers (client-side, persisted in localStorage)
+// ---------------------------------------------------------------------------
+function applyTheme(isDark, save = true) {
+  document.body.classList.toggle("dark-mode", isDark);
+  const toggle = document.getElementById("dark-mode-toggle");
+  if (toggle) toggle.checked = isDark;
+  if (save) localStorage.setItem("pv-theme", isDark ? "dark" : "light");
+}
+
+function applyAccent(color, save = true) {
+  document.documentElement.style.setProperty("--accent-blue", color);
+  document.querySelectorAll(".accent-swatch").forEach(s => {
+    s.classList.toggle("active", s.dataset.accent === color);
+  });
+  if (save) localStorage.setItem("pv-accent", color);
+}
+
+function applyFontSize(size, save = true) {
+  document.documentElement.style.fontSize = size + "px";
+  const slider = document.getElementById("font-size-slider");
+  const val    = document.getElementById("font-size-val");
+  if (slider) slider.value = size;
+  if (val)    val.textContent = `${size} px`;
+  if (save) localStorage.setItem("pv-font-size", size);
+}
+
+// ---------------------------------------------------------------------------
+// Analysis difficulty presets
+// ---------------------------------------------------------------------------
+const DIFFICULTY_PRESETS = {
+  easy:   { PARAM_SQUAT_DEPTH: 150, PARAM_LEAN_WARN: 50, PARAM_LEAN_CRIT: 65, PARAM_ROUNDING: 25 },
+  normal: { PARAM_SQUAT_DEPTH: 140, PARAM_LEAN_WARN: 40, PARAM_LEAN_CRIT: 55, PARAM_ROUNDING: 18 },
+  strict: { PARAM_SQUAT_DEPTH: 120, PARAM_LEAN_WARN: 28, PARAM_LEAN_CRIT: 40, PARAM_ROUNDING: 12 },
+};
+
+function setDifficulty(preset) {
+  const p = DIFFICULTY_PRESETS[preset];
+  if (!p) return;
+  document.querySelectorAll(".difficulty-pill").forEach(pill => {
+    pill.classList.toggle("active", pill.id === `diff-${preset}`);
+  });
+  Object.entries(p).forEach(([key, val]) => {
+    if (backend) backend.update_setting(key, JSON.stringify(val));
+  });
+  setSlider("squat-depth-slider", "squat-depth-val", p.PARAM_SQUAT_DEPTH, v => `${v}°`);
+  setSlider("lean-warn-slider",   "lean-warn-val",   p.PARAM_LEAN_WARN,   v => `${v}°`);
+  setSlider("lean-crit-slider",   "lean-crit-val",   p.PARAM_LEAN_CRIT,   v => `${v}°`);
+  setSlider("rounding-slider",    "rounding-val",    p.PARAM_ROUNDING,    v => `${v}°`);
+  toast(`Difficulty set to ${preset[0].toUpperCase() + preset.slice(1)}.`, "success");
+}
+
+// ---------------------------------------------------------------------------
+// Profile
+// ---------------------------------------------------------------------------
+function changePassword() {
+  toast("To change your password, please visit the Physio-Vision web portal.", "info");
+}
+
+// ---------------------------------------------------------------------------
+// Data & Privacy
+// ---------------------------------------------------------------------------
+function exportData() {
+  if (!_cachedRecords.length) { toast("No session data to export.", "warning"); return; }
+  if (!backend) { toast("Backend not connected.", "error"); return; }
+  backend.export_history(JSON.stringify(_cachedRecords, null, 2), (resultStr) => {
+    const result = JSON.parse(resultStr);
+    if (result.cancelled) return;
+    if (result.ok) toast("Data exported successfully.", "success");
+    else toast("Export failed.", "error");
+  });
+}
+
+function clearHistory() {
+  document.getElementById("clear-history-btn")?.classList.add("hidden");
+  document.getElementById("clear-history-confirm")?.classList.remove("hidden");
+}
+
+function cancelClearHistory() {
+  document.getElementById("clear-history-btn")?.classList.remove("hidden");
+  document.getElementById("clear-history-confirm")?.classList.add("hidden");
+}
+
+function confirmClearHistory() {
+  cancelClearHistory();
+  _cachedRecords = [];
+  populateRecords([]);
+  updateKpis([]);
+  renderAnalyticsChart([], "all");
+  renderAnalyticsBreakdown([]);
+  renderAnalyticsKpis([]);
+  toast("Session history cleared.", "success");
+  if (backend) backend.clear_history();
+}
+
+// ---------------------------------------------------------------------------
 // Settings — two-way bridge
 // ---------------------------------------------------------------------------
+function onSettingSelect(key, selectId) {
+  const el = document.getElementById(selectId);
+  if (!el || !backend) return;
+  backend.update_setting(key, JSON.stringify(parseInt(el.value)));
+}
+
 function onSettingSlider(key, sliderId, valId, fmt) {
   const slider = document.getElementById(sliderId);
   const valEl  = document.getElementById(valId);
@@ -260,7 +397,33 @@ function onSessionFinished(jsonStr) {
   updateSessionButton();
   updateStatusPill("OFFLINE", "");
   setVideoFeed(false);
-  openPainDialog(report);
+  if (ui.painPromptEnabled) {
+    openPainDialog(report);
+  } else {
+    _autoSubmitSession(report);
+  }
+}
+
+function _autoSubmitSession(report) {
+  const newRecord = {
+    date:       new Date().toLocaleDateString("en-GB", { day:"2-digit", month:"short", year:"numeric" }),
+    exercise:   ui.currentExercise || "squat",
+    reps:       report.reps || 0,
+    score:      report.avg_score || 0,
+    pain_level: 0,
+    details:    report.details || [],
+  };
+  _cachedRecords = [newRecord, ..._cachedRecords];
+  populateRecords(_cachedRecords);
+  updateKpis(_cachedRecords);
+  renderAnalyticsChart(_cachedRecords, "all");
+  renderAnalyticsBreakdown(_cachedRecords);
+  renderAnalyticsKpis(_cachedRecords);
+  if (backend) {
+    backend.submit_pain_score("0", ui.currentExercise || "", report.reps || 0,
+      report.avg_score || 0, JSON.stringify(report.details || []));
+    setTimeout(() => { backend.fetch_goals(); backend.fetch_achievements(); }, 2000);
+  }
 }
 
 function onHistoryLoaded(jsonStr) {
@@ -1110,6 +1273,49 @@ document.addEventListener("DOMContentLoaded", () => {
     onSettingToggle("VOICE_ON", "voice-toggle"));
   document.getElementById("ar-toggle")?.addEventListener("change", () =>
     onSettingToggle("AR_MODE", "ar-toggle"));
+
+  // Appearance
+  document.getElementById("dark-mode-toggle")?.addEventListener("change", e =>
+    applyTheme(e.target.checked));
+  document.querySelectorAll(".accent-swatch").forEach(s =>
+    s.addEventListener("click", () => applyAccent(s.dataset.accent)));
+  document.getElementById("font-size-slider")?.addEventListener("input", e =>
+    applyFontSize(parseFloat(e.target.value)));
+
+  // Camera & Capture
+  document.getElementById("camera-select")?.addEventListener("change", () =>
+    onSettingSelect("CAMERA_INDEX", "camera-select"));
+  document.getElementById("mirror-toggle")?.addEventListener("change", () =>
+    onSettingToggle("MIRROR_VIDEO", "mirror-toggle"));
+
+  // Notifications & Session
+  document.getElementById("pain-prompt-toggle")?.addEventListener("change", () => {
+    onSettingToggle("PAIN_PROMPT_ENABLED", "pain-prompt-toggle");
+    const el = document.getElementById("pain-prompt-toggle");
+    if (el) ui.painPromptEnabled = el.checked;
+  });
+  document.getElementById("session-timeout-slider")?.addEventListener("input", () =>
+    onSettingSlider("SESSION_TIMEOUT_MINS", "session-timeout-slider", "session-timeout-val",
+      v => parseInt(v) === 0 ? "Off" : `${v} min`));
+  document.getElementById("rep-target-slider")?.addEventListener("input", () =>
+    onSettingSlider("DEFAULT_REP_TARGET", "rep-target-slider", "rep-target-val",
+      v => parseInt(v) === 0 ? "None" : String(parseInt(v))));
+
+  // Advanced thresholds
+  document.getElementById("squat-depth-slider")?.addEventListener("input", () =>
+    onSettingSlider("PARAM_SQUAT_DEPTH", "squat-depth-slider", "squat-depth-val", v => `${v}°`));
+  document.getElementById("lean-warn-slider")?.addEventListener("input", () =>
+    onSettingSlider("PARAM_LEAN_WARN", "lean-warn-slider", "lean-warn-val", v => `${v}°`));
+  document.getElementById("lean-crit-slider")?.addEventListener("input", () =>
+    onSettingSlider("PARAM_LEAN_CRIT", "lean-crit-slider", "lean-crit-val", v => `${v}°`));
+  document.getElementById("rounding-slider")?.addEventListener("input", () =>
+    onSettingSlider("PARAM_ROUNDING", "rounding-slider", "rounding-val", v => `${v}°`));
+  document.getElementById("mp-detect-slider")?.addEventListener("input", () =>
+    onSettingSlider("MP_DETECTION_CONFIDENCE", "mp-detect-slider", "mp-detect-val",
+      v => parseFloat(v).toFixed(2)));
+  document.getElementById("mp-track-slider")?.addEventListener("input", () =>
+    onSettingSlider("MP_TRACKING_CONFIDENCE", "mp-track-slider", "mp-track-val",
+      v => parseFloat(v).toFixed(2)));
 
   // Pain slider
   document.getElementById("pain_slider")?.addEventListener("input", (e) =>
