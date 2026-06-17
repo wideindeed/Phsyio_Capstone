@@ -16,13 +16,14 @@ from qfluentwidgets import (LineEdit, PrimaryPushButton, PushButton,
 # ---------------------------------------------------------------------------
 # API URL  (unchanged)
 # ---------------------------------------------------------------------------
-API_URL = os.environ.get("API_URL")
-if API_URL is None:
-    raise EnvironmentError(
-        "API_URL is not set.\n"
-        "Windows CMD:   set API_URL=https://your-tunnel-url.com/\n"
-        "PyCharm:       Run > Edit Configurations > Environment variables"
-    )
+try:
+    from config import API_URL
+except ImportError:
+    API_URL = os.environ.get("API_URL")
+    if not API_URL:
+        raise EnvironmentError(
+            "API_URL not set. Add a config.py or set the environment variable."
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -69,9 +70,9 @@ class GoogleAuthThread(QThread):
 # ---------------------------------------------------------------------------
 # Asset paths  (unchanged)
 # ---------------------------------------------------------------------------
-_HERE = os.path.dirname(os.path.abspath(__file__))
-SPLASH_VIDEO   = os.path.join(_HERE, "startup_content", "eye.mp4")
-PLAYER_SCRIPT  = os.path.join(_HERE, "splash_player.py")
+from engine import resource_path
+SPLASH_VIDEO   = resource_path(os.path.join("..", "startup_content", "eye.mp4"))
+PLAYER_SCRIPT  = resource_path("splash_player.py")
 
 
 # ---------------------------------------------------------------------------
@@ -242,12 +243,12 @@ class LoginWindow(QWidget):
         lay.setSpacing(0)
 
         # Brand icon — blue square, medical cross glyph
-        icon_lbl = QLabel("⚕")
+        icon_lbl = QLabel("+")
         icon_lbl.setFixedSize(40, 40)
         icon_lbl.setAlignment(Qt.AlignCenter)
         icon_lbl.setStyleSheet(
-            f"background: {CLR_ACCENT}; color: white; font-size: 18px;"
-            " border-radius: 3px;"
+            f"background: {CLR_ACCENT}; color: white; font-size: 22px;"
+            " font-weight: 800; border-radius: 3px;"
         )
         lay.addWidget(icon_lbl)
         lay.addSpacing(20)

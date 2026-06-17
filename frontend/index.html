@@ -100,7 +100,10 @@
     opacity: 0.5;
     filter: grayscale(1);
   }
-  .achievement-icon { font-size: 22px; margin-bottom: 6px; }
+  .achievement-icon { font-size: 22px; margin-bottom: 6px; color: var(--accent-blue, #2563EB); }
+  .achievement-badge.unlocked .achievement-icon { color: var(--accent-green, #10B981); }
+  .achievement-badge.unlocked.tier-gold .achievement-icon { color: #F59E0B; }
+  .achievement-badge.unlocked.tier-silver .achievement-icon { color: #94A3B8; }
   .achievement-title {
     font-size: 11px; font-weight: 700;
     color: var(--text-primary); line-height: 1.3;
@@ -207,9 +210,9 @@
     width: 44px; height: 44px; border-radius: 10px; flex-shrink: 0;
     display: flex; align-items: center; justify-content: center; font-size: 22px;
   }
-  .course-card-emoji.beginner     { background: #ECFDF5; }
-  .course-card-emoji.intermediate { background: #FFFBEB; }
-  .course-card-emoji.advanced     { background: #FEF2F2; }
+  .course-card-emoji.beginner     { background: #ECFDF5; color: #065F46; }
+  .course-card-emoji.intermediate { background: #FFFBEB; color: #78350F; }
+  .course-card-emoji.advanced     { background: #FEF2F2; color: #7F1D1D; }
   .course-card-title-wrap { flex: 1; }
   .course-card-title {
     font-size: 14px; font-weight: 700; color: var(--text-primary);
@@ -314,7 +317,14 @@
     font-size: 11px; font-weight: 700; color: var(--text-muted);
   }
   .course-step-num.done { background: var(--accent-green); border-color: var(--accent-green); color: #fff; }
-  .course-step-icon { font-size: 20px; flex-shrink: 0; }
+  .course-step-icon { font-size: 20px; flex-shrink: 0; color: var(--accent-blue, #2563EB); }
+  .course-step-icon svg { width: 20px; height: 20px; }
+  .course-card-emoji svg { width: 22px; height: 22px; }
+  .course-step-num svg { width: 14px; height: 14px; }
+  .course-modal-title-icon { display: inline-flex; vertical-align: middle; }
+  .course-modal-title-icon svg { width: 20px; height: 20px; }
+  .course-tag svg { width: 12px; height: 12px; vertical-align: -1px; }
+  .course-card-btn svg { width: 12px; height: 12px; vertical-align: -1px; }
   .course-step-info { flex: 1; }
   .course-step-label { font-size: 13px; font-weight: 600; color: var(--text-primary); }
   .course-step-meta  { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
@@ -366,17 +376,22 @@
 
 <div class="goal-modal-overlay" id="goal-modal-overlay">
   <div class="goal-modal">
-    <div class="goal-modal-title">🎯 Add New Goal</div>
+    <div class="goal-modal-title">Add New Goal</div>
 
     <div class="goal-form-row">
       <label class="goal-form-label">Exercise</label>
       <select class="goal-form-select" id="gm-exercise">
         <option value="any">Any Exercise</option>
-        <option value="squat">🦵 Deep Squat</option>
-        <option value="sts">🪑 Sit to Stand</option>
-        <option value="pushup">💪 Push-up</option>
-        <option value="curl">🏋️ Bicep Curl</option>
-        <option value="lateral_raise">🙆 Lateral Raise</option>
+        <option value="squat">Deep Squat</option>
+        <option value="sts">Sit to Stand</option>
+        <option value="pushup">Push-up</option>
+        <option value="curl">Bicep Curl</option>
+        <option value="lateral_raise">Lateral Raise</option>
+        <option value="knee_extension">Knee Extension</option>
+        <option value="wall_pushup">Wall Push-Up</option>
+        <option value="hip_march">Hip March</option>
+        <option value="shoulder_extension">Shoulder Extension</option>
+        <option value="shoulder_scaption">Shoulder Scaption</option>
       </select>
     </div>
 
@@ -577,61 +592,61 @@
       <div class="exercise-grid">
 
         <div class="exercise-card" data-key="squat">
-          <div class="exercise-icon">🦵</div>
+          <div class="exercise-icon"></div>
           <div class="exercise-title">Deep Squat</div>
           <div class="exercise-desc">Knee & hip mobility analysis using Keras LSTM</div>
         </div>
 
         <div class="exercise-card" data-key="sts">
-          <div class="exercise-icon">🪑</div>
+          <div class="exercise-icon"></div>
           <div class="exercise-title">Sit to Stand</div>
           <div class="exercise-desc">Geriatric fall-risk assessment via STS model</div>
         </div>
 
         <div class="exercise-card" data-key="pushup">
-          <div class="exercise-icon">💪</div>
+          <div class="exercise-icon"></div>
           <div class="exercise-title">Push-up</div>
           <div class="exercise-desc">Upper body & core stabilisation analysis</div>
         </div>
 
         <div class="exercise-card" data-key="curl">
-          <div class="exercise-icon">🏋️</div>
+          <div class="exercise-icon"></div>
           <div class="exercise-title">Bicep Curl</div>
           <div class="exercise-desc">Elbow ROM & cheat-pattern classification</div>
         </div>
 
         <div class="exercise-card" data-key="lateral_raise">
-          <div class="exercise-icon">🙆</div>
+          <div class="exercise-icon"></div>
           <div class="exercise-title">Lateral Raise</div>
           <div class="exercise-desc">Shoulder abduction & symmetry analysis</div>
         </div>
 
         <div class="exercise-card" data-key="knee_extension">
-          <div class="exercise-icon">🦵</div>
+          <div class="exercise-icon"></div>
           <div class="exercise-title">Knee Extension</div>
           <div class="exercise-desc">Seated straight-leg raise & ROM analysis</div>
         </div>
 
         <div class="exercise-card" data-key="wall_pushup">
-          <div class="exercise-icon">🤜</div>
+          <div class="exercise-icon"></div>
           <div class="exercise-title">Wall Push-Up</div>
           <div class="exercise-desc">Upper body & shoulder mobility analysis</div>
         </div>
 
         <div class="exercise-card" data-key="hip_march">
-          <div class="exercise-icon">🏃</div>
+          <div class="exercise-icon"></div>
           <div class="exercise-title">Hip March</div>
           <div class="exercise-desc">Hip flexor mobility & symmetry analysis</div>
         </div>
 
         <div class="exercise-card" data-key="shoulder_extension">
-          <div class="exercise-icon">🔙</div>
+          <div class="exercise-icon"></div>
           <div class="exercise-title">Shoulder Extension</div>
           <div class="exercise-desc">Standing shoulder extension & posture analysis</div>
         </div>
 
         <div class="exercise-card" data-key="shoulder_scaption">
-          <div class="exercise-icon">🙌</div>
+          <div class="exercise-icon"></div>
           <div class="exercise-title">Shoulder Scaption</div>
           <div class="exercise-desc">Diagonal Y-raise & rotator cuff analysis</div>
         </div>
@@ -650,7 +665,7 @@
           <button class="btn btn-ghost btn-sm" id="back-btn">← Back</button>
           <div>
             <div class="page-title">
-              <span id="analysis-exercise-icon">🦵</span>
+              <span id="analysis-exercise-icon"></span>
               <span id="analysis-exercise-title" style="margin-left:8px">Exercise</span>
             </div>
             <div class="page-subtitle">Live MediaPipe + Keras analysis</div>
@@ -677,7 +692,7 @@
           <div class="video-wrapper">
             <!-- Offline placeholder -->
             <div class="video-offline-placeholder" id="video-placeholder">
-              <div class="placeholder-icon">📷</div>
+              <div class="placeholder-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></div>
               <div style="font-size:13px;font-weight:600;color:var(--text-secondary)">Camera Offline</div>
               <div style="font-size:12px;color:var(--text-muted)">Press Start Session to begin</div>
             </div>
@@ -693,7 +708,7 @@
           <!-- Session control -->
           <div class="metric-block">
             <button class="btn btn-primary btn-full" id="session-btn">
-              ▶  Start Session
+              Start Session
             </button>
           </div>
 
@@ -720,20 +735,11 @@
             </div>
           </div>
 
-          <!-- Joint angles -->
+          <!-- Live rep history -->
           <div class="metric-block">
-            <div class="metric-block-title">Joint Angles</div>
-            <div class="metric-row">
-              <span class="metric-row-label">Knee Angle</span>
-              <span class="metric-row-value" id="metric-knee">—</span>
-            </div>
-            <div class="metric-row">
-              <span class="metric-row-label">Trunk Lean</span>
-              <span class="metric-row-value" id="metric-trunk">—</span>
-            </div>
-            <div class="metric-row">
-              <span class="metric-row-label">Elbow Angle</span>
-              <span class="metric-row-value" id="metric-elbow">—</span>
+            <div class="metric-block-title">Rep History</div>
+            <div class="rep-history-list" id="rep-history-list">
+              <div class="rep-history-empty">Reps will appear here as you go.</div>
             </div>
           </div>
 
@@ -811,15 +817,15 @@
           <!-- Exercise filter pills -->
           <div class="analytics-filter-row" id="analytics-filters">
             <button class="filter-pill active" data-filter="all">All</button>
-            <button class="filter-pill" data-filter="squat">🦵 Squat</button>
-            <button class="filter-pill" data-filter="sts">🪑 Sit–Stand</button>
-            <button class="filter-pill" data-filter="pushup">💪 Push-up</button>
-            <button class="filter-pill" data-filter="curl">🏋️ Curl</button>
-            <button class="filter-pill" data-filter="knee_extension">🦵 Knee Ext</button>
-            <button class="filter-pill" data-filter="wall_pushup">🤜 Wall Push-Up</button>
-            <button class="filter-pill" data-filter="hip_march">🏃 Hip March</button>
-            <button class="filter-pill" data-filter="shoulder_extension">🔙 Shoulder Ext</button>
-            <button class="filter-pill" data-filter="shoulder_scaption">🙌 Scaption</button>
+            <button class="filter-pill" data-filter="squat">Squat</button>
+            <button class="filter-pill" data-filter="sts">Sit-Stand</button>
+            <button class="filter-pill" data-filter="pushup">Push-up</button>
+            <button class="filter-pill" data-filter="curl">Curl</button>
+            <button class="filter-pill" data-filter="knee_extension">Knee Ext</button>
+            <button class="filter-pill" data-filter="wall_pushup">Wall Push-Up</button>
+            <button class="filter-pill" data-filter="hip_march">Hip March</button>
+            <button class="filter-pill" data-filter="shoulder_extension">Shoulder Ext</button>
+            <button class="filter-pill" data-filter="shoulder_scaption">Scaption</button>
           </div>
         </div>
         <!-- Canvas wrapper enforces max-height so Chart.js never explodes vertically -->
@@ -1335,7 +1341,7 @@
       <td style="vertical-align:middle; padding:0; width:60%;">
         <table style="border:none; border-collapse:collapse;">
           <tr>
-            <td style="vertical-align:middle; padding-right:14px; font-size:32pt; line-height:1; color:#000;">⚕</td>
+            <td style="vertical-align:middle; padding-right:14px; line-height:1; color:#000;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v16M4 12h16"/></svg></td>
             <td style="vertical-align:middle; padding:0;">
               <div class="cr-logo-name">Physio-Vision</div>
               <div class="cr-logo-sub">AI-Assisted Clinical Motion Analysis</div>

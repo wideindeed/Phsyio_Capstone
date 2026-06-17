@@ -1,3 +1,4 @@
+import sys
 import cv2
 import time
 import threading
@@ -7,12 +8,18 @@ import math
 import os
 from datetime import datetime
 from keras.models import load_model
-# ── PhysioVision: centralised model directory ─────────────────────────────────
-# Works in development (points to <root>/models/) and in a PyInstaller bundle.
-import sys as _sys
+
+
+def resource_path(relative: str) -> str:
+    """Resolve a path that works both in PyCharm and in the .exe."""
+    base = getattr(sys, '_MEIPASS',
+                   os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(base, relative)
+
+
 _MODEL_DIR = (
-    os.path.join(_sys._MEIPASS, "models")
-    if getattr(_sys, "frozen", False)
+    os.path.join(sys._MEIPASS, "models")
+    if getattr(sys, "frozen", False)
     else os.path.normpath(
         os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "models")
     )
@@ -55,9 +62,8 @@ class AppState:
     AR_MODE: bool = False
 
     # --- File Paths ---
-    GUIDE_PATH: str = os.path.join(
-        os.path.dirname(os.path.abspath(__file__)),
-        '..', 'assets', 'Video_Generation_Person_Squatting.mp4'
+    GUIDE_PATH: str = resource_path(
+        os.path.join('..', 'assets', 'Video_Generation_Person_Squatting.mp4')
     )
 
     # --- Squat Analysis Thresholds ---

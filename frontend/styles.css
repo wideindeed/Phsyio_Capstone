@@ -318,7 +318,12 @@ html, body {
   background: #EFF6FF;
   border-radius: var(--radius-sm);
   display: flex; align-items: center; justify-content: center;
+  color: var(--accent-blue, #2563EB);
 }
+.exercise-icon svg { width: 28px; height: 28px; }
+.record-ex-icon svg,
+.breakdown-card-icon svg { width: 20px; height: 20px; }
+.achievement-icon svg { width: 22px; height: 22px; }
 
 .exercise-title { font-size: 14px; font-weight: 700; color: var(--text-primary); }
 .exercise-desc  { font-size: 12px; color: var(--text-secondary); line-height: 1.4; }
@@ -372,7 +377,8 @@ html, body {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   gap: 12px; height: 100%; color: var(--text-muted);
 }
-.video-offline-placeholder .placeholder-icon { font-size: 48px; opacity: 0.4; }
+.video-offline-placeholder .placeholder-icon { font-size: 48px; opacity: 0.4; color: var(--text-muted); }
+.video-offline-placeholder .placeholder-icon svg { width: 48px; height: 48px; }
 
 /* Stats panel: fixed width */
 .stats-panel {
@@ -423,6 +429,47 @@ html, body {
 .metric-row-value {
   font-family: 'DM Mono', monospace;
   font-size: 13px; font-weight: 500; color: var(--text-primary);
+}
+
+/* Rep history (live analysis sidebar) */
+.rep-history-list {
+  max-height: 180px; overflow-y: auto;
+  display: flex; flex-direction: column; gap: 0;
+}
+.rep-history-empty {
+  font-size: 12px; color: var(--text-muted);
+  text-align: center; padding: 16px 0;
+  font-style: italic;
+}
+.rep-history-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--border);
+  animation: repRowIn 200ms ease both;
+}
+.rep-history-row:first-child { border-top: none; }
+.rep-history-row:last-child  { border-bottom: none; }
+.rep-history-num {
+  font-family: 'DM Mono', monospace;
+  font-size: 11px; font-weight: 600; color: var(--text-muted);
+  min-width: 28px;
+}
+.rep-history-score {
+  font-family: 'DM Mono', monospace;
+  font-size: 12px; font-weight: 700;
+  min-width: 30px; text-align: center;
+  padding: 2px 6px; border-radius: 4px;
+}
+.rep-history-score.good { background: #ECFDF5; color: #065F46; }
+.rep-history-score.mid  { background: #FFFBEB; color: #78350F; }
+.rep-history-score.low  { background: #FEF2F2; color: #7F1D1D; }
+.rep-history-feedback {
+  font-size: 11px; color: var(--text-secondary);
+  flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+@keyframes repRowIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
 /* Score ring */
@@ -478,6 +525,9 @@ html, body {
 .btn-ghost:hover { background: var(--bg-app); color: var(--text-primary); }
 .btn-sm { padding: 6px 12px; font-size: 12px; }
 .btn-full { width: 100%; }
+.btn svg { width: 14px; height: 14px; vertical-align: -2px; }
+.goal-item-label svg { width: 14px; height: 14px; vertical-align: -2px; }
+#analysis-exercise-icon svg { width: 24px; height: 24px; vertical-align: -4px; }
 
 /* ── Patient Records ───────────────────────────────────────────────────────── */
 .records-list { display: flex; flex-direction: column; gap: 10px; }
@@ -501,7 +551,7 @@ html, body {
   font-size: 20px; width: 36px; height: 36px;
   background: #EFF6FF; border-radius: var(--radius-sm);
   display: flex; align-items: center; justify-content: center;
-  flex-shrink: 0;
+  flex-shrink: 0; color: var(--accent-blue, #2563EB);
 }
 
 .record-meta { flex: 1; min-width: 0; }
@@ -824,7 +874,8 @@ input#pain_slider {
   height: 280px; gap: 10px;
   color: var(--text-muted);
 }
-.analytics-empty .empty-icon { font-size: 40px; opacity: 0.35; }
+.analytics-empty .empty-icon { font-size: 40px; opacity: 0.35; color: var(--text-muted); }
+.analytics-empty .empty-icon svg { width: 40px; height: 40px; }
 .analytics-empty .empty-text { font-size: 13px; font-weight: 500; }
 
 /* Per-exercise breakdown cards */
@@ -850,7 +901,7 @@ input#pain_slider {
   width: 36px; height: 36px;
   background: #EFF6FF; border-radius: var(--radius-sm);
   display: flex; align-items: center; justify-content: center;
-  font-size: 18px; flex-shrink: 0;
+  font-size: 18px; flex-shrink: 0; color: var(--accent-blue, #2563EB);
 }
 .breakdown-card-title {
   font-size: 13px; font-weight: 700; color: var(--text-primary);
@@ -1331,6 +1382,9 @@ body.dark-mode {
 body.dark-mode .exercise-icon   { background: #21262D; }
 body.dark-mode .record-ex-icon  { background: #21262D; }
 body.dark-mode .breakdown-card-icon { background: #21262D; }
+body.dark-mode .rep-history-score.good { background: #0D2118; color: #4ADE80; }
+body.dark-mode .rep-history-score.mid  { background: #1C150A; color: #FCD34D; }
+body.dark-mode .rep-history-score.low  { background: #2A1517; color: #FCA5A5; }
 body.dark-mode .feedback-chip   { background: #0D2118; color: #4ADE80; border-color: #166534; }
 body.dark-mode .feedback-chip.warn { background: #1C150A; color: #FCD34D; border-color: #92400E; }
 body.dark-mode .goal-form-select,

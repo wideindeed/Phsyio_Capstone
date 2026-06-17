@@ -1,43 +1,4 @@
-# =============================================================================
-#  dashboard.py — Physio-Vision GUI Layer (QWebEngine Edition)
-#
-#  CRASH FIX NOTES (exit code 0xC0000409 — Stack Buffer Overrun):
-#
-#  Three root causes were identified and fixed:
-#
-#  1. WRONG SIGNAL NAMES: Old code connected to `frame_ready` / `session_done`
-#     which do not exist on VisionWorker. The correct names are
-#     `frame_processed` and `session_finished`. Connecting to a non-existent
-#     signal is a silent no-op, so the worker ran completely unconnected.
-#
-#  2. DANGLING POINTER IN QImage: engine.py constructs QImage with a raw
-#     pointer into a numpy array's data buffer:
-#       qt_img = QImage(rgb_frame.data, w, h, ch * w, QImage.Format_RGB888)
-#     The numpy array is freed at the end of the loop iteration. When the
-#     queued signal delivers the QImage to the main thread, the buffer is
-#     already gone → memory corruption → 0xC0000409.
-#     Fix: call qt_img.copy() inside _on_frame FIRST, before any pixel access.
-#
-#  3. Qt.QueuedConnection NOT FORCED: PyQt5 cross-thread signals between a
-#     QThread and a QObject on the main thread should auto-queue, but the
-#     default connection type is Qt.AutoConnection which can degrade to
-#     DirectConnection if Qt considers both objects to be in the same thread
-#     affinity. Forcing Qt.QueuedConnection on every worker→dashboard
-#     connection guarantees the slot always runs on the main thread's event
-#     loop, making all slot bodies safe to touch Qt objects.
-#
-#  4. QWebEngineView AS TOP-LEVEL WINDOW: On Windows, QWebEngineView must be
-#     parented inside a QMainWindow. Using it as the standalone top-level
-#     widget causes the Chromium GPU/renderer child process IPC to fail.
-#     Fix: wrap PhysioDashboard in a QMainWindow.
-#
-#  5. BACKGROUND THREAD emit(): _post() and _fetch() threading.Thread workers
-#     called Signal.emit() directly. On Windows this is unsafe for signals
-#     that cross into the Qt event loop. Fixed by using
-#     QMetaObject.invokeMethod with Qt.QueuedConnection to trampoline the
-#     emit back onto the main thread.
-#
-# =============================================================================
+
 
 import sys
 import os
@@ -61,13 +22,12 @@ from qfluentwidgets import setTheme, Theme
 
 from goals import GoalTracker
 from auth import API_URL
-from engine import state, VisionWorker
+from engine import state, VisionWorker, resource_path
 
 # ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
-_HERE = os.path.dirname(os.path.abspath(__file__))
-FRONTEND_DIR = os.path.normpath(os.path.join(_HERE, "..", "frontend"))
+FRONTEND_DIR = resource_path(os.path.join("..", "frontend"))
 INDEX_HTML   = os.path.join(FRONTEND_DIR, "index.html")
 
 # ---------------------------------------------------------------------------
@@ -670,3 +630,6 @@ def run_application():
     login_window.raise_()
     login_window.activateWindow()
     sys.exit(app.exec())
+
+
+launch_app = run_application
