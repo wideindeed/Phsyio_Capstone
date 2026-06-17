@@ -7,7 +7,7 @@
 ; Open this file in the Inno Setup IDE and click Build → Compile.
 
 #define AppName      "PhysioVision"
-#define AppVersion   "1.0.0"
+#define AppVersion   "1.0.0".
 #define AppPublisher "British University in Dubai — Capstone 2026"
 #define AppURL       "https://physiovision.app"
 #define AppExeName   "PhysioVision.exe"
