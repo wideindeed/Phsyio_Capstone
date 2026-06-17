@@ -1,163 +1,433 @@
-# Physio-Vision: Enterprise Biomechanical Analysis Engine
+# PhysioVision — Clinical AI Physiotherapy Assessment Platform
 
-## Project Overview
+<p align="center">
+  <img src="docs/assets/banner.png" alt="PhysioVision Banner" width="100%"/>
+</p>
 
-Physio-Vision is a high-performance computer vision application designed to analyze human movement mechanics in real time. Unlike traditional fitness trackers that rely solely on 2D pose estimation or opaque "black box" AI classification, this system employs a hybrid neuro-symbolic architecture.
+<p align="center">
+  <img alt="Python" src="https://img.shields.io/badge/Python-3.13-3776AB?style=flat-square&logo=python&logoColor=white"/>
+  <img alt="TensorFlow" src="https://img.shields.io/badge/TensorFlow-2.15-FF6F00?style=flat-square&logo=tensorflow&logoColor=white"/>
+  <img alt="Keras" src="https://img.shields.io/badge/Keras-2.15-D00000?style=flat-square&logo=keras&logoColor=white"/>
+  <img alt="FastAPI" src="https://img.shields.io/badge/FastAPI-Latest-009688?style=flat-square&logo=fastapi&logoColor=white"/>
+  <img alt="PyQt5" src="https://img.shields.io/badge/PyQt5-Desktop-41CD52?style=flat-square&logo=qt&logoColor=white"/>
+  <img alt="MediaPipe" src="https://img.shields.io/badge/MediaPipe-BlazePose-0097A7?style=flat-square"/>
+  <img alt="Platform" src="https://img.shields.io/badge/Platform-Windows-0078D6?style=flat-square&logo=windows&logoColor=white"/>
+  <img alt="License" src="https://img.shields.io/badge/License-MIT-green?style=flat-square"/>
+</p>
 
-It combines MediaPipe's neural network-based skeletal perception with a strict 3D vector calculus engine for deterministic geometric safety enforcement. The current build is optimized for the deep squat movement and is capable of detecting subtle biomechanical faults such as thoracic rounding, excessive trunk lean, and valgus collapse using a standard webcam.
+<p align="center">
+  Real-time AI-powered rehabilitation exercise assessment — delivered as an accessible, cloud-connected desktop application.
+</p>
 
-The application also features a procedural augmented reality positioning system to standardize subject placement and a multi-threaded GUI for lag-free visualization. Session data is synchronized with a FastAPI backend that stores user accounts and training history in a local SQLite database.
+---
 
-## Key Features
+## Table of Contents
 
-### 3D Depth Inference
+- [Overview](#overview)
+- [Features](#features)
+- [Exercise Catalogue](#exercise-catalogue)
+- [Architecture](#architecture)
+- [Tech Stack](#tech-stack)
+- [Project Structure](#project-structure)
+- [Getting Started](#getting-started)
+  - [Prerequisites](#prerequisites)
+  - [Client Installation](#client-installation)
+  - [Server Deployment](#server-deployment)
+  - [Environment Variables](#environment-variables)
+- [Training New Models](#training-new-models)
+- [API Reference](#api-reference)
+- [Model Evaluation](#model-evaluation)
+- [Team](#team)
+- [Acknowledgements](#acknowledgements)
 
-* Utilizes MediaPipe world landmarks to calculate true 3D joint angles.
-* Mitigates perspective errors caused by subject rotation or camera distance.
+---
 
-### Holographic AR Guidance
+## Overview
 
-* Implements a procedural "reactor ring" targeting system.
-* Projects perspective-corrected floor guides to standardize subject distance and orientation.
+PhysioVision is a capstone research project that brings clinical-grade physiotherapy assessment to consumer hardware. Using a standard USB camera and MediaPipe pose estimation, the platform scores exercise form in real time using a suite of Bidirectional LSTM models trained on the [UI-PRMD rehabilitation dataset](https://doi.org/10.3390/data3010002).
 
-### Biomechanical Fault Detection
+The application is built as a **PyQt5 desktop app** with a full HTML/CSS/JavaScript single-page frontend rendered through `QWebEngineView`, communicating with Python via `QWebChannel`. A production-hardened **FastAPI backend** running on a Raspberry Pi provides multi-user authentication, cloud-synced session history, goals, achievements, and structured course progressions.
 
-* Thoracic kyphosis proxy: detects upper back rounding by analyzing 3D shoulder protraction vectors.
-* Trunk flexion monitor: measures spinal lean relative to gravity, dynamically calibrated for varying user anthropometry.
-* Kinematic state machine: uses angular thresholds to accurately track concentric and eccentric movement phases.
+---
 
-### Live Engineering Console
+## Features
 
-* Floating debugging interface that allows real-time adjustment of sensitivity thresholds during active sessions.
+| Category | Feature |
+|---|---|
+| **AI Assessment** | Real-time form scoring (0–100) per rep using Bidirectional LSTM |
+| **Pose Estimation** | MediaPipe BlazePose — 33 3D world-space landmarks at ~30 fps |
+| **Voice Feedback** | Text-to-speech form corrections and rep counts per session |
+| **Session History** | Cloud-synced records with per-rep breakdown and pain tracking |
+| **Goals** | User-defined targets (reps, score, sessions) with live progress bars |
+| **Achievements** | 12 auto-unlocking milestone badges (streaks, rep counts, score thresholds) |
+| **Courses** | Structured rehabilitation programmes with sequential step unlock |
+| **Analytics** | Per-exercise score timelines with trend visualisation |
+| **Clinical Export** | PDF session report generation |
+| **AR Overlay** | Hologram projection mode for spatial positioning guidance |
+| **Authentication** | Email/password + Google OAuth, JWT access/refresh token rotation |
+| **Security** | bcrypt (cost=14), Cloudflare Turnstile, slowapi rate limiting, rotating audit logs |
 
-### Longitudinal Telemetry
+---
 
-* Automatically serializes session metrics into structured patient history logs.
-* Tracks repetition counts and form scores across sessions with optional synchronization via the backend.
+## Exercise Catalogue
 
-## System Architecture
+| # | Exercise | Dataset | Input Shape | Focus |
+|---|---|---|---|---|
+| 1 | Deep Squat | UI-PRMD DS | `(1, 81, 66)` | Knee & hip mobility |
+| 2 | Sit to Stand | UI-PRMD STS | `(1, 88, 66)` | Geriatric fall-risk assessment |
+| 3 | Push-Up | UI-PRMD TSPU | `(1, 60, 66)` | Upper body & core stabilisation |
+| 4 | Bicep Curl | Proprietary CSV | `(1, 40, 99)` | Elbow ROM & cheat-pattern classification |
+| 5 | Lateral Raise | UI-PRMD SSA | `(1, 74, 66)` | Shoulder abduction & symmetry |
+| 6 | Knee Extension | UI-PRMD SASLR | `(1, 63, 66)` | Seated leg raise & ROM |
+| 7 | Wall Push-Up | UI-PRMD IL | `(1, 77, 66)` | Shoulder & upper limb mobility |
+| 8 | Hip March | UI-PRMD HS | `(1, 69, 66)` | Hip flexor mobility & gait rehab |
+| 9 | Shoulder Extension | UI-PRMD SSE | `(1, 67, 66)` | Posture correction |
+| 10 | Shoulder Scaption | UI-PRMD SSS | `(1, 66, 66)` | Rotator cuff rehabilitation |
 
-The engine operates on a concurrent, two-layer pipeline.
+> **Note:** Exercises 1–5 are original models. Exercises 6–10 were trained as part of this project using the UI-PRMD dataset.
 
-### Perception Layer (Neural)
+---
 
-* A dedicated Vision Worker thread manages camera I/O.
-* Runs MediaPipe inference at 30+ FPS.
-* Outputs normalized 3D skeletal landmark data.
+## Architecture
 
-### Logic Layer (Symbolic)
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│                        DESKTOP APPLICATION                           │
+│                                                                      │
+│   USB Camera → MediaPipe BlazePose → PRMD Feature Extraction        │
+│         (33 landmarks)              (22 joints × 3D = 66 feat/frame)│
+│                         ↓                                            │
+│              cv2.resize → Fixed-T Frame Buffer                       │
+│                         ↓                                            │
+│            Keras BiLSTM Model → Form Score (0–100)                  │
+│                         ↓                                            │
+│            PyQt5 + QWebEngineView ←→ HTML/CSS/JS SPA               │
+│                  (QWebChannel Bridge)                                │
+└────────────────────────┬─────────────────────────────────────────────┘
+                         │ HTTPS (JWT Bearer)
+                         ↓
+┌──────────────────────────────────────────────────────────────────────┐
+│                   CLOUD BACKEND  (Raspberry Pi 24/7)                │
+│                                                                      │
+│   FastAPI → SQLite (WAL mode)                                        │
+│   JWT auth · bcrypt · Rate limiting · Cloudflare Turnstile          │
+│   Tables: users · sessions · goals · achievements ·                 │
+│           course_step_log · refresh_tokens · failed_logins           │
+└──────────────────────────────────────────────────────────────────────┘
+```
 
-* A parallel vector physics engine evaluates the live skeleton against deterministic safety constraints.
-* Triggers asynchronous audio feedback without blocking the vision pipeline.
+### Shared BiLSTM Model Architecture
 
-### Backend
+All regression models share the same architecture, differing only in the `T` (time steps) dimension:
 
-* FastAPI server (`api_server.py`) with SQLite database (`physio.db`).
-* Supports user registration, login, session logging, and history retrieval.
+```
+Input (1, T, 66)
+    → Bidirectional LSTM (128 units, return_sequences=True)
+    → Dropout (0.3)
+    → Bidirectional LSTM (64 units)
+    → Dropout (0.3)
+    → Dense (32, ReLU)
+    → Dense (1, Sigmoid)          # Output: quality score 0.0–1.0
+```
 
-## Installation
+The Bicep Curl model uses a standard LSTM classifier with 5-class softmax output (Drag · Half · Heave · Perfect · Swing).
+
+---
+
+## Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Desktop shell | Python 3.13 · PyQt5 · QWebEngineView |
+| Frontend SPA | HTML5 · CSS3 · Vanilla JavaScript |
+| Python↔JS bridge | QWebChannel |
+| Pose estimation | MediaPipe BlazePose |
+| AI models | Keras 2.15 · TensorFlow 2.15 |
+| Video processing | OpenCV (cv2) |
+| Backend API | FastAPI · Uvicorn |
+| Database | SQLite (WAL mode, FK enforced) |
+| Auth | JWT (HS256) · bcrypt (cost=14) · Google OAuth 2.0 |
+| Email | Resend API |
+| Bot protection | Cloudflare Turnstile |
+| Rate limiting | slowapi (per-IP, tiered per endpoint) |
+| Server hardware | Raspberry Pi (24/7 deployment) |
+
+---
+
+## Project Structure
+
+```
+PhysioVision/
+│
+├── engine.py                        # AI pipeline, camera loop, VisionWorker (QThread)
+├── dashboard.py                     # PyQt5 Bridge (QWebChannel), MJPEG server
+├── auth.py                          # Login window (PyQt5), Google OAuth handler
+├── goals.py                         # Client-side GoalTracker & achievement definitions
+│
+├── *_analyzer.py                    # Per-exercise state machine classes (one per exercise)
+│   ├── knee_extension_analyzer.py
+│   ├── wall_pushup_analyzer.py
+│   ├── hip_march_analyzer.py
+│   ├── shoulder_extension_analyzer.py
+│   └── shoulder_scaption_analyzer.py
+│
+├── index.html                       # SPA entry point (Hub · Analysis · Records · Analytics
+│                                    #                  Goals · Achievements · Courses · Settings)
+├── app.js                           # Frontend logic, QWebChannel bindings, chart rendering
+├── styles.css                       # Design system (dark sidebar, clinical blue, sharp geometry)
+│
+├── train.py                         # Model training script (all 6 UI-PRMD exercises)
+├── download_data.py                 # Downloads UI-PRMD fold data from RehabPile
+├── download_all_folds.py            # Downloads all k-folds for existing exercises
+├── evaluate_all_models.py           # Cross-fold evaluation: MAE, RMSE, R² per model
+├── evaluate_bicep_curl.py           # Classification accuracy evaluation (proprietary dataset)
+│
+├── api_server.py                    # FastAPI server (deploy on Raspberry Pi)
+│
+├── *.keras                          # Trained model files (not committed — see below)
+├── UIPRMD_reg/                      # UI-PRMD dataset folds (not committed)
+│   ├── DS/fold0–4/
+│   ├── STS/fold0–2/
+│   └── ...
+│
+└── requirements.txt
+```
+
+> **Model files** (`.keras`) and dataset folders (`UIPRMD_reg/`) are excluded from version control due to file size. See [Training New Models](#training-new-models) to reproduce them.
+
+---
+
+## Getting Started
 
 ### Prerequisites
 
-* Python 3.10 or 3.11
-* Webcam
+- Python 3.13
+- Windows 10/11 (PyQt5 + QWebEngineView is tested on Windows)
+- A USB or built-in webcam
+- Access to the PhysioVision API server (or run your own — see [Server Deployment](#server-deployment))
 
-### Dependencies
-
-Install required packages using pip. NumPy version is strictly constrained to maintain compatibility.
+### Client Installation
 
 ```bash
+# 1. Clone the repository
+git clone https://github.com/your-org/physiovision.git
+cd physiovision
+
+# 2. Create and activate a virtual environment
+python -m venv venv
+venv\Scripts\activate        # Windows
+
+# 3. Install dependencies
 pip install -r requirements.txt
+
+# 4. Set the API URL environment variable
+set API_URL=https://your-api-server.com   # Windows CMD
+# or
+$env:API_URL="https://your-api-server.com" # PowerShell
+
+# 5. Place your trained .keras model files in the project root
+# (see Training New Models section)
+
+# 6. Launch the application
+python dashboard.py
 ```
 
-If installing manually:
+### Server Deployment
+
+The API server is designed to run on a **Raspberry Pi** (or any Linux host) behind a reverse proxy (Cloudflare Tunnel recommended).
 
 ```bash
-pip install opencv-contrib-python mediapipe PyQt5 pyttsx3 qfluentwidgets fastapi uvicorn
-pip install "numpy<2.0.0" --force-reinstall
+# On the Raspberry Pi:
+
+# 1. Clone and set up
+git clone https://github.com/your-org/physiovision.git
+cd physiovision
+python -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+
+# 2. Configure environment variables (see below)
+cp .env.example .env
+nano .env
+
+# 3. Run the server
+uvicorn api_server:app --host 127.0.0.1 --port 8000
+
+# Or as a systemd service (recommended for 24/7 operation):
+sudo systemctl start physiovision
 ```
 
-## Backend Setup
+### Environment Variables
 
-The application requires the FastAPI backend to be running for authentication and session storage.
+Create a `.env` file in the project root for the API server. **Never commit this file.**
 
-Place `api_server.py` and `physio.db` in the project root.
+```env
+# JWT secrets — generate with: python -c "import secrets; print(secrets.token_hex(64))"
+JWT_ACCESS_SECRET=your_access_secret_here
+JWT_REFRESH_SECRET=your_refresh_secret_here
 
-Start the server:
+# Email delivery (https://resend.com)
+RESEND_API_KEY=re_xxxxxxxxxxxx
+
+# Google OAuth (https://console.cloud.google.com)
+GOOGLE_CLIENT_ID=your_client_id.apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=your_client_secret
+
+# Cloudflare Turnstile (https://dash.cloudflare.com)
+TURNSTILE_SECRET_KEY=your_turnstile_secret
+
+# Public URLs
+PUBLIC_SERVER_URL=https://api.your-domain.com
+FRONTEND_URL=https://your-domain.com
+```
+
+For the desktop client, only one variable is required:
+
+```env
+API_URL=https://api.your-domain.com
+```
+
+---
+
+## Training New Models
+
+Use `train.py` to retrain any exercise model from scratch using the UI-PRMD dataset.
 
 ```bash
-uvicorn api_server:app --reload --host 0.0.0.0 --port 8000
+# 1. Download the required dataset folds
+python download_data.py          # Downloads fold0 for all exercises
+python download_all_folds.py     # Downloads fold1+ for cross-validation
+
+# 2. Train all models (runs sequentially, ~15–30 min on CPU)
+python train.py
+
+# Output: one .keras file per exercise in the project root
 ```
 
-The server will be available at http://127.0.0.1:8000 (or your network IP if running on a remote machine such as a Raspberry Pi).
+**Training configuration:**
 
-Note: The provided `physio.db` contains the initial database schema and will be used automatically by the server.
+| Parameter | Value |
+|---|---|
+| Architecture | BiLSTM(128) → BiLSTM(64) → Dense(32) → Dense(1, sigmoid) |
+| Optimizer | Adam |
+| Loss | Mean Squared Error (MSE) |
+| Epochs | 100 (max) with EarlyStopping patience=25 |
+| Batch size | 8 |
+| Dropout | 0.3 after each BiLSTM layer |
+| Normalisation | Pelvis-anchor (root = mid-hip, scale = pelvis width) |
+| Resampling | `cv2.resize` bilinear → fixed T frames per exercise |
+| Framework | Keras 2.15 · TensorFlow 2.15 |
 
-## Client Configuration and Usage
+To add a new exercise, see the integration pattern in any existing `*_analyzer.py` file and follow the steps in `INTEGRATION_BRIEF.txt`.
 
-### Environment Variable Setup (Required)
+---
 
-The client needs the backend URL. Set the `API_URL` environment variable before running the application.
+## API Reference
 
-#### In PyCharm (Recommended)
+The FastAPI server exposes the following endpoints. All protected routes require a `Bearer` token in the `Authorization` header.
 
-Open Run → Edit Configurations for `test.py`.
+### Authentication
 
-In User environment variables, click "+" and add:
+| Method | Endpoint | Auth | Description |
+|---|---|---|---|
+| `POST` | `/register` | Public | Create a new account (sends verification email) |
+| `GET` | `/verify` | Public | Verify email address via token link |
+| `POST` | `/login` | Public | Authenticate and receive JWT token pair |
+| `POST` | `/refresh` | Public | Rotate refresh token, receive new access token |
+| `POST` | `/logout` | Public | Revoke refresh token |
+| `GET` | `/auth/google/login` | Public | Initiate Google OAuth flow |
+| `GET` | `/auth/google/callback` | Public | Google OAuth redirect handler |
+| `POST` | `/complete_profile` | Public | Complete profile after Google sign-up |
 
-* Name: API_URL
-* Value: http://127.0.0.1:8000/   (or your server's actual address, ending with /)
+### Sessions & Data
 
-Apply and save.
+| Method | Endpoint | Auth | Description |
+|---|---|---|---|
+| `POST` | `/log_session` | ✅ | Log a completed exercise session |
+| `GET` | `/get_history` | ✅ | Retrieve session history (last 500) |
+| `GET` | `/dashboard_data` | ✅ | Aggregated stats for the dashboard |
 
-#### From Command Prompt (Windows)
+### Goals
 
-```cmd
-set API_URL=http://127.0.0.1:8000/
-python test.py
-```
+| Method | Endpoint | Auth | Description |
+|---|---|---|---|
+| `GET` | `/get_goals` | ✅ | Fetch active goals with computed progress |
+| `POST` | `/set_goal` | ✅ | Create a new goal |
+| `DELETE` | `/delete_goal/{id}` | ✅ | Delete a goal by ID |
 
-#### From PowerShell
+### Achievements
 
-```powershell
-$env:API_URL = "http://127.0.0.1:8000/"
-python test.py
-```
+| Method | Endpoint | Auth | Description |
+|---|---|---|---|
+| `GET` | `/get_achievements` | ✅ | Full achievement catalogue with locked/unlocked status |
 
-Update the value if your backend runs on a different IP or port.
+### Courses
 
-## Guide Video Configuration
+| Method | Endpoint | Auth | Description |
+|---|---|---|---|
+| `GET` | `/get_course_progress` | ✅ | Fetch all completed course steps |
+| `POST` | `/log_course_step` | ✅ | Log or update a completed step (UPSERT) |
+| `DELETE` | `/reset_course/{course_id}` | ✅ | Clear all progress for a course |
 
-In `test.py`, ensure the guide video path in the `AppState` class points to your reference file:
+### System
 
-```python
-GUIDE_PATH = "Video_Generation_Person_Squatting.mp4"
-```
+| Method | Endpoint | Auth | Description |
+|---|---|---|---|
+| `GET` | `/health` | Public | Server status check |
 
-## Execution
+---
 
-Run the client:
+## Model Evaluation
+
+Models are evaluated across all available UI-PRMD k-folds. Run the evaluation scripts after downloading all folds:
 
 ```bash
-python test.py
+python evaluate_all_models.py    # Regression models (MAE, RMSE, R²)
+python evaluate_bicep_curl.py    # Classification accuracy (proprietary dataset)
 ```
 
-The login window will appear. Register a new account or log in. The system will then allow live analysis sessions.
+### Results
 
-## Operation Flow
+| Exercise | Test Samples | MAE ↓ | RMSE ↓ | R² ↑ |
+|---|---|---|---|---|
+| Knee Extension | 146 | 0.024 | 0.040 | **0.883** |
+| Lateral Raise | 126 | 0.043 | 0.073 | **0.881** |
+| Hip March | 110 | 0.046 | 0.071 | **0.871** |
+| Shoulder Extension | 126 | 0.044 | 0.068 | **0.836** |
+| Sit to Stand | 104 | 0.024 | 0.033 | **0.805** |
+| Wall Push-Up | 102 | 0.083 | 0.105 | 0.782 |
+| Shoulder Scaption | 108 | 0.078 | 0.110 | 0.671 |
+| Deep Squat † | 180 | 0.028 | 0.043 | 0.543 |
+| **Average** | **922** | **0.046** | **0.068** | **0.784** |
+| Bicep Curl ‡ | 539 | — | — | **100% acc.** |
 
-* Backend: Ensure `api_server.py` is running.
-* AR Alignment: Enable Holographic Guidance in Settings. Align feet with the projected floor target until the status indicator shows "TARGET LOCKED".
-* Calibration: The system performs a brief static analysis.
-* Session: Perform squats. The engine tracks repetitions, evaluates form, and provides real-time audio cues.
-* Review: Navigate to Patient Records to view session reports. Data is automatically saved to the backend.
+> † Deep Squat uses a pre-existing smaller architecture (110k parameters vs 368k for all other models), which accounts for the lower R².  
+> ‡ Bicep Curl is a 5-class cheat-pattern classifier evaluated on the full proprietary dataset (classification accuracy, not regression).
 
-## Current Limitations
+*MAE scale: 0–1 (labels are normalised quality scores). Lower MAE = smaller average error.*
 
-* Optimized for side-profile view. Front-facing or oblique angles may reduce accuracy.
-* External loads (e.g., barbells) are not yet modeled.
-* Lighting sensitivity may introduce depth jitter in extreme conditions.
+---
 
-## Disclaimer
+## Team
 
-This software is provided for educational and research purposes only. It is not a medical device. Users should consult a qualified healthcare professional before beginning any new exercise program. The developers assume no responsibility for injuries sustained while using this software.
+| Name | Role |
+|---|---|
+| **Mahmood Muwafi** | Lead Developer |
+| **Afzal M. Harish** | AI & Model Development |
+| **Abdulsalam Alturk** | Backend & Systems |
+
+**British University in Dubai** · Computer Science & Engineering · Capstone 2026
+
+---
+
+## Acknowledgements
+
+- [UI-PRMD Dataset](https://doi.org/10.3390/data3010002) — Vakanski, A. et al. (2018). University of Idaho Physical Rehabilitation Movement Data. *Data, 3*(1), 2.
+- [MediaPipe](https://github.com/google/mediapipe) — Lugaresi, C. et al. (2019). MediaPipe: A Framework for Building Perception Pipelines. *arXiv:1906.08172*
+- [RehabPile Benchmark](https://msd-irimas.github.io/pages/DeepRehabPile/) — Ismail-Fawaz, A. et al. (2026). A Standardized Benchmark for Skeleton-Based Rehabilitation Assessment. *IEEE FG 2026*
+
+---
+
+## License
+
+This project is licensed under the MIT License. See [`LICENSE`](LICENSE) for details.
