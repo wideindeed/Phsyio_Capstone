@@ -100,6 +100,8 @@ CLR_PANEL_SUBTLE   = "rgba(248,250,252,0.25)"
 #  SPLASH  (unchanged)
 # =============================================================================
 def play_splash():
+    if getattr(sys, 'frozen', False):
+        return
     if not os.path.exists(PLAYER_SCRIPT):
         return
     if not os.path.exists(SPLASH_VIDEO):

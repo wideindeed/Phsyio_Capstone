@@ -12,8 +12,10 @@ from keras.models import load_model
 
 def resource_path(relative: str) -> str:
     """Resolve a path that works both in PyCharm and in the .exe."""
-    base = getattr(sys, '_MEIPASS',
-                   os.path.dirname(os.path.abspath(__file__)))
+    if getattr(sys, 'frozen', False):
+        base = os.path.join(sys._MEIPASS, 'src')
+    else:
+        base = os.path.dirname(os.path.abspath(__file__))
     return os.path.join(base, relative)
 
 
@@ -226,12 +228,6 @@ def is_profile_view(landmarks) -> bool:
     return abs(l_sh.x - r_sh.x) < 0.20
 
 
-try:
-    STS_MODEL = load_model(os.path.join(_MODEL_DIR, "sit_to_stand_robust.keras"))
-except:
-    STS_MODEL = None
-
-
 def normalize_skeleton_sts_live(frames_list):
     """Formats the 88 captured frames exactly how the Keras model expects it."""
     data = np.array(frames_list).reshape(1, 88, 22, 3)  # Batch 1, 88 frames, 22 joints, 3 dims
@@ -395,88 +391,76 @@ def speak_async(text: str) -> None:
     threading.Thread(target=_speak, daemon=True).start()
 
 
-try:
-    SQUAT_MODEL = load_model(os.path.join(_MODEL_DIR, "deep_squat_robust.keras"))
-except:
-    SQUAT_MODEL = None
+# =============================================================================
+#  BACKGROUND MODEL LOADER
+#  All 11 Keras models load in parallel daemon threads so the UI appears
+#  instantly.  Every inference site already guards with `if MODEL:` and
+#  falls back to a hardcoded score, so a session started before loading
+#  finishes still works — it just won't have AI scoring until the model
+#  arrives.
+# =============================================================================
 
-try:
-    PUSHUP_MODEL = load_model(os.path.join(_MODEL_DIR, "pushup_robust.keras"))
-except:
-    PUSHUP_MODEL = None
+import tensorflow as tf
 
-try:
-    STS_MODEL = load_model(os.path.join(_MODEL_DIR, "sit_to_stand_robust.keras"))
-except:
-    STS_MODEL = None
+SQUAT_MODEL         = None
+PUSHUP_MODEL        = None
+STS_MODEL           = None
+CURL_MODEL          = None
+LATERAL_RAISE_MODEL = None
 
-try:
-    import os
-    import tensorflow as tf  # <--- Bringing in the modern library!
+def _load_model_safe(path, use_tf=False):
+    """Returns a loaded model or None. Never raises."""
+    try:
+        if not os.path.exists(path):
+            return None
+        if use_tf:
+            return tf.keras.models.load_model(path)
+        return load_model(path)
+    except Exception:
+        return None
 
-    # Force Python to look in the exact directory where this running script lives
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    target_model_path = os.path.join(_MODEL_DIR, "bicep_curl_robust.keras")
+def _bg_load_all_models():
+    """Load every model on background threads, set globals when done."""
+    import concurrent.futures
 
-    if os.path.exists(target_model_path):
-        CURL_MODEL = tf.keras.models.load_model(target_model_path)
-    else:
-        CURL_MODEL = None
+    global SQUAT_MODEL, PUSHUP_MODEL, STS_MODEL, CURL_MODEL, LATERAL_RAISE_MODEL
 
-except Exception as e:
-    CURL_MODEL = None
+    jobs = {
+        "squat":      (os.path.join(_MODEL_DIR, "deep_squat_robust.keras"),      False),
+        "pushup":     (os.path.join(_MODEL_DIR, "pushup_robust.keras"),          False),
+        "sts":        (os.path.join(_MODEL_DIR, "sit_to_stand_robust.keras"),    False),
+        "curl":       (os.path.join(_MODEL_DIR, "bicep_curl_robust.keras"),      True),
+        "lateral":    (os.path.join(_MODEL_DIR, "w_raise_robust.keras"),         True),
+        "knee_ext":   (os.path.join(_MODEL_DIR, "knee_extension_robust.keras"),  True),
+        "wall_push":  (os.path.join(_MODEL_DIR, "wall_pushup_robust.keras"),     True),
+        "hip_march":  (os.path.join(_MODEL_DIR, "hip_march_robust.keras"),       True),
+        "sh_ext":     (os.path.join(_MODEL_DIR, "shoulder_extension_robust.keras"), True),
+        "sh_scap":    (os.path.join(_MODEL_DIR, "shoulder_scaption_robust.keras"),  True),
+    }
 
-try:
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    target_model_path = os.path.join(_MODEL_DIR, "w_raise_robust.keras")
+    futures = {}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+        for key, (path, use_tf) in jobs.items():
+            futures[key] = pool.submit(_load_model_safe, path, use_tf)
 
-    if os.path.exists(target_model_path):
-        LATERAL_RAISE_MODEL = tf.keras.models.load_model(target_model_path)
-    else:
-        LATERAL_RAISE_MODEL = None
+        for key, future in futures.items():
+            try:
+                model = future.result(timeout=120)
+            except Exception:
+                model = None
 
-except Exception as e:
-    LATERAL_RAISE_MODEL = None
+            if key == "squat":        SQUAT_MODEL         = model
+            elif key == "pushup":     PUSHUP_MODEL        = model
+            elif key == "sts":        STS_MODEL           = model
+            elif key == "curl":       CURL_MODEL          = model
+            elif key == "lateral":    LATERAL_RAISE_MODEL = model
+            elif key == "knee_ext":   set_knee_model(model) if model else None
+            elif key == "wall_push":  set_wall_model(model) if model else None
+            elif key == "hip_march":  set_hip_model(model) if model else None
+            elif key == "sh_ext":     set_shoulder_ext_model(model) if model else None
+            elif key == "sh_scap":    set_shoulder_sca_model(model) if model else None
 
-try:
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    _path = os.path.join(_MODEL_DIR, "knee_extension_robust.keras")
-    if os.path.exists(_path):
-        set_knee_model(tf.keras.models.load_model(_path))
-except Exception:
-    pass
-
-try:
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    _path = os.path.join(_MODEL_DIR, "wall_pushup_robust.keras")
-    if os.path.exists(_path):
-        set_wall_model(tf.keras.models.load_model(_path))
-except Exception:
-    pass
-
-try:
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    _path = os.path.join(_MODEL_DIR, "hip_march_robust.keras")
-    if os.path.exists(_path):
-        set_hip_model(tf.keras.models.load_model(_path))
-except Exception:
-    pass
-
-try:
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    _path = os.path.join(_MODEL_DIR, "shoulder_extension_robust.keras")
-    if os.path.exists(_path):
-        set_shoulder_ext_model(tf.keras.models.load_model(_path))
-except Exception:
-    pass
-
-try:
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    _path = os.path.join(_MODEL_DIR, "shoulder_scaption_robust.keras")
-    if os.path.exists(_path):
-        set_shoulder_sca_model(tf.keras.models.load_model(_path))
-except Exception:
-    pass
+threading.Thread(target=_bg_load_all_models, daemon=True).start()
 
 
 # --- 2. NORMALIZATION FUNCTIONS ---
