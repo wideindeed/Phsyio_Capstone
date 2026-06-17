@@ -489,6 +489,19 @@ html, body {
 }
 .score-ring-sub { font-size: 11px; color: var(--text-muted); }
 
+/* Groq status dot */
+.status-dot {
+  display: inline-block;
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+.status-dot--checking { background: #94A3B8; }
+.status-dot--active   { background: #10B981; }
+.status-dot--limited  { background: #F59E0B; }
+.status-dot--error    { background: #EF4444; }
+
 /* Feedback chip */
 .feedback-chip {
   padding: 8px 12px; border-radius: var(--radius-sm);

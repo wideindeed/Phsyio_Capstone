@@ -1259,6 +1259,56 @@
           </div>
         </div>
 
+        <!-- ── AI Rep Feedback ──────────────────────────────────── -->
+        <div class="settings-section">
+          <div class="settings-section-title">AI Rep Feedback</div>
+          <div style="font-size:12px;color:var(--text-secondary);margin-bottom:14px;line-height:1.5;">
+            PhysioVision uses Groq AI to generate personalised spoken feedback after each rep.
+          </div>
+
+          <div class="setting-row">
+            <div>
+              <div class="setting-label">API Status</div>
+              <div class="setting-sub">Current key health</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:6px;">
+              <span id="groq-status-dot" class="status-dot status-dot--checking"></span>
+              <span id="groq-status-text" style="font-size:12px;color:var(--text-secondary);">Checking...</span>
+              <button class="btn btn-ghost btn-sm" onclick="checkGroqStatus()" style="margin-left:6px;">Refresh</button>
+            </div>
+          </div>
+
+          <div class="setting-row">
+            <div>
+              <div class="setting-label">Key Source</div>
+              <div class="setting-sub">Which API key is in use</div>
+            </div>
+            <span class="setting-mono" id="groq-key-source">Project default</span>
+          </div>
+
+          <div class="setting-row" style="flex-direction:column;align-items:flex-start;gap:8px;">
+            <div class="setting-label">Your Groq API Key <span style="font-weight:400;opacity:.6">(optional)</span></div>
+            <div style="display:flex;gap:8px;width:100%;">
+              <input id="groq-key-input" type="password"
+                     class="goal-form-input" style="flex:1;"
+                     placeholder="gsk_xxxxxxxxxxxxxxxxxxxxxxxx">
+              <button class="btn btn-primary btn-sm" onclick="saveGroqKey()">Save Key</button>
+              <button class="btn btn-ghost btn-sm" id="groq-clear-btn"
+                      onclick="clearGroqKey()" style="display:none;">Clear</button>
+            </div>
+            <div style="display:flex;align-items:center;gap:6px;margin-top:2px;">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="opacity:.5;flex-shrink:0;"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+              <span style="font-size:11px;color:var(--text-muted);">
+                Your key is stored locally on this device only and is never transmitted to our servers.
+              </span>
+            </div>
+            <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">
+              Get a free key at <span style="color:var(--accent-blue);">console.groq.com</span>
+              — use your own key if the project limit is reached.
+            </div>
+          </div>
+        </div>
+
       </div><!-- /settings-grid -->
     </div>
     <!-- /page-settings -->

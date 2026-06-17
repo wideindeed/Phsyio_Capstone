@@ -44,6 +44,9 @@ from hip_march_analyzer           import HipMarchAnalyzer,           set_model a
 from shoulder_extension_analyzer  import ShoulderExtensionAnalyzer,  set_model as set_shoulder_ext_model
 from shoulder_scaption_analyzer   import ShoulderScaptionAnalyzer,   set_model as set_shoulder_sca_model
 
+from groq_feedback import get_rep_feedback
+import groq_feedback as _groq_fb
+
 
 # =============================================================================
 #  GLOBAL STATE & TUNING PARAMETERS
@@ -227,7 +230,6 @@ try:
     STS_MODEL = load_model(os.path.join(_MODEL_DIR, "sit_to_stand_robust.keras"))
 except:
     STS_MODEL = None
-    print("[Physio-Vision] WARNING: sit_to_stand_robust.keras not found.")
 
 
 def normalize_skeleton_sts_live(frames_list):
@@ -397,19 +399,16 @@ try:
     SQUAT_MODEL = load_model(os.path.join(_MODEL_DIR, "deep_squat_robust.keras"))
 except:
     SQUAT_MODEL = None
-    print("WARNING: deep_squat_robust.keras not found.")
 
 try:
     PUSHUP_MODEL = load_model(os.path.join(_MODEL_DIR, "pushup_robust.keras"))
 except:
     PUSHUP_MODEL = None
-    print("WARNING: pushup_robust.keras not found.")
 
 try:
     STS_MODEL = load_model(os.path.join(_MODEL_DIR, "sit_to_stand_robust.keras"))
 except:
     STS_MODEL = None
-    print("WARNING: sit_to_stand_robust.keras not found.")
 
 try:
     import os
@@ -420,16 +419,12 @@ try:
     target_model_path = os.path.join(_MODEL_DIR, "bicep_curl_robust.keras")
 
     if os.path.exists(target_model_path):
-        # Using tf.keras instead of the old standalone keras
         CURL_MODEL = tf.keras.models.load_model(target_model_path)
-        print("[Physio-Vision] SUCCESS: Bicep Curl AI Model Loaded via Absolute Path.")
     else:
         CURL_MODEL = None
-        print(f"[Physio-Vision] WARNING: Model file not found at {target_model_path}")
 
 except Exception as e:
     CURL_MODEL = None
-    print(f"[Physio-Vision] ERROR loading Bicep Curl model: {e}")
 
 try:
     current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -437,72 +432,51 @@ try:
 
     if os.path.exists(target_model_path):
         LATERAL_RAISE_MODEL = tf.keras.models.load_model(target_model_path)
-        print("[Physio-Vision] SUCCESS: Lateral Raise AI Model Loaded via Absolute Path.")
     else:
         LATERAL_RAISE_MODEL = None
-        print(f"[Physio-Vision] WARNING: Model file not found at {target_model_path}")
 
 except Exception as e:
     LATERAL_RAISE_MODEL = None
-    print(f"[Physio-Vision] ERROR loading Lateral Raise model: {e}")
 
 try:
     current_dir = os.path.dirname(os.path.abspath(__file__))
     _path = os.path.join(_MODEL_DIR, "knee_extension_robust.keras")
     if os.path.exists(_path):
-        _m = tf.keras.models.load_model(_path)
-        set_knee_model(_m)
-        print("[Physio-Vision] SUCCESS: Knee Extension model loaded.")
-    else:
-        print(f"[Physio-Vision] WARNING: knee_extension_robust.keras not found.")
-except Exception as e:
-    print(f"[Physio-Vision] ERROR loading Knee Extension model: {e}")
+        set_knee_model(tf.keras.models.load_model(_path))
+except Exception:
+    pass
 
 try:
     current_dir = os.path.dirname(os.path.abspath(__file__))
     _path = os.path.join(_MODEL_DIR, "wall_pushup_robust.keras")
     if os.path.exists(_path):
-        _m = tf.keras.models.load_model(_path)
-        set_wall_model(_m)
-        print("[Physio-Vision] SUCCESS: Wall Push-Up model loaded.")
-    else:
-        print(f"[Physio-Vision] WARNING: wall_pushup_robust.keras not found.")
-except Exception as e:
-    print(f"[Physio-Vision] ERROR loading Wall Push-Up model: {e}")
+        set_wall_model(tf.keras.models.load_model(_path))
+except Exception:
+    pass
 
 try:
     current_dir = os.path.dirname(os.path.abspath(__file__))
     _path = os.path.join(_MODEL_DIR, "hip_march_robust.keras")
     if os.path.exists(_path):
-        _m = tf.keras.models.load_model(_path)
-        set_hip_model(_m)
-        print("[Physio-Vision] SUCCESS: Hip March model loaded.")
-    else:
-        print(f"[Physio-Vision] WARNING: hip_march_robust.keras not found.")
-except Exception as e:
-    print(f"[Physio-Vision] ERROR loading Hip March model: {e}")
+        set_hip_model(tf.keras.models.load_model(_path))
+except Exception:
+    pass
 
 try:
     current_dir = os.path.dirname(os.path.abspath(__file__))
     _path = os.path.join(_MODEL_DIR, "shoulder_extension_robust.keras")
     if os.path.exists(_path):
         set_shoulder_ext_model(tf.keras.models.load_model(_path))
-        print("[Physio-Vision] SUCCESS: Shoulder Extension model loaded.")
-    else:
-        print("[Physio-Vision] WARNING: shoulder_extension_robust.keras not found.")
-except Exception as e:
-    print(f"[Physio-Vision] ERROR loading Shoulder Extension model: {e}")
+except Exception:
+    pass
 
 try:
     current_dir = os.path.dirname(os.path.abspath(__file__))
     _path = os.path.join(_MODEL_DIR, "shoulder_scaption_robust.keras")
     if os.path.exists(_path):
         set_shoulder_sca_model(tf.keras.models.load_model(_path))
-        print("[Physio-Vision] SUCCESS: Shoulder Scaption model loaded.")
-    else:
-        print("[Physio-Vision] WARNING: shoulder_scaption_robust.keras not found.")
-except Exception as e:
-    print(f"[Physio-Vision] ERROR loading Shoulder Scaption model: {e}")
+except Exception:
+    pass
 
 
 # --- 2. NORMALIZATION FUNCTIONS ---
@@ -871,10 +845,13 @@ class VisionWorker(QThread):
                         self.session_log.append(log_entry)
                         self.stats_update.emit({"reps": self.reps, "score": score, "feedback": feedback})
 
-                        speak_text = f"Rep {self.reps}."
-                        if feedback != "Excellent Form":
-                            speak_text += f" {feedback}."
-                        speak_async(speak_text)
+                        get_rep_feedback(
+                            exercise="Push-Up",
+                            rep_num=self.reps,
+                            score=score,
+                            issues=[log_entry["issue"]] if log_entry.get("issue") and log_entry["issue"] != "Excellent Form" else [],
+                            callback=lambda text: speak_async(text),
+                        )
 
                     except Exception as e:
                         print(f"Pushup AI Inference Error: {e}")
@@ -1005,10 +982,13 @@ class VisionWorker(QThread):
                         self.session_log.append(log_entry)
                         self.stats_update.emit({"reps": self.reps, "score": score, "feedback": feedback})
 
-                        speak_text = f"Rep {self.reps}."
-                        if feedback != "Excellent Form":
-                            speak_text += f" {feedback}."
-                        speak_async(speak_text)
+                        get_rep_feedback(
+                            exercise="Bicep Curl",
+                            rep_num=self.reps,
+                            score=score,
+                            issues=[log_entry["issue"]] if log_entry.get("issue") and log_entry["issue"] != "Excellent Form" else [],
+                            callback=lambda text: speak_async(text),
+                        )
                     except Exception as e:
                         print(f"Curl AI Inference Error: {e}")
 
@@ -1233,12 +1213,13 @@ class VisionWorker(QThread):
 
                         self.stats_update.emit({"reps": self.reps, "score": score, "feedback": feedback})
 
-                        speak_text = f"Rep {self.reps}."
-
-                        if feedback != "Excellent Form":
-                            speak_text += f" {feedback}."
-
-                        speak_async(speak_text)
+                        get_rep_feedback(
+                            exercise="Lateral Raise",
+                            rep_num=self.reps,
+                            score=score,
+                            issues=[log_entry["issue"]] if log_entry.get("issue") and log_entry["issue"] != "Excellent Form" else [],
+                            callback=lambda text: speak_async(text),
+                        )
 
 
                     except Exception as e:
@@ -1381,10 +1362,14 @@ class VisionWorker(QThread):
                     self.stats_update.emit({"reps": self.reps, "score": score, "feedback": feedback})
 
                     # 5. Speak the results
-                    speak_text = f"Rep {self.reps}."
-                    if feedback != "Excellent Form":
-                        speak_text += f" {feedback}."
-                    speak_async(speak_text)
+                    _ex_name = "Deep Squat" if self.exercise_mode == "squat" else "Sit to Stand"
+                    get_rep_feedback(
+                        exercise=_ex_name,
+                        rep_num=self.reps,
+                        score=score,
+                        issues=[log_entry["issue"]] if log_entry.get("issue") and log_entry["issue"] != "Excellent Form" else [],
+                        callback=lambda text: speak_async(text),
+                    )
 
                 except Exception as e:
                     print(f"AI Inference Error: {e}")

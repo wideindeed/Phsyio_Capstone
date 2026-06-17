@@ -1,5 +1,6 @@
 import numpy as np
 import cv2
+from groq_feedback import get_rep_feedback
 
 # ── Constants ──────────────────────────────────────────────────────────────────
 TIME_STEPS   = 63
@@ -122,10 +123,13 @@ class KneeExtensionAnalyzer:
                     worker.session_log.append(log_entry)
                     worker.stats_update.emit({"reps": worker.reps, "score": score, "feedback": feedback})
 
-                    speak_text = f"Rep {worker.reps}."
-                    if feedback != "Excellent Form":
-                        speak_text += f" {feedback}."
-                    speak_async(speak_text)
+                    get_rep_feedback(
+                        exercise="Knee Extension",
+                        rep_num=worker.reps,
+                        score=score,
+                        issues=[log_entry["issue"]] if log_entry.get("issue") and log_entry["issue"] != "Excellent Form" else [],
+                        callback=lambda text: speak_async(text),
+                    )
 
             except Exception as e:
                 print(f"[KneeExtension] Inference error: {e}")

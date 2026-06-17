@@ -83,6 +83,8 @@ new QWebChannel(qt.webChannelTransport, (channel) => {
   backend.goals_loaded.connect(onGoalsLoaded);
   backend.achievements_loaded.connect(onAchievementsLoaded);
   backend.course_progress_loaded.connect(onCourseProgressLoaded);
+  backend.groq_status_changed.connect(onGroqStatusChanged);
+  backend.groq_key_info.connect(onGroqKeyInfo);
 
   // ── Seed the UI with real backend state ─────────────────────────────────
   backend.get_initial_state((stateJson) => {
@@ -95,6 +97,7 @@ new QWebChannel(qt.webChannelTransport, (channel) => {
   backend.fetch_goals();
   backend.fetch_achievements();
   backend.fetch_course_progress();
+  backend.check_groq_status();
 });
 
 // ---------------------------------------------------------------------------
@@ -1074,6 +1077,56 @@ function deleteGoal(goalId) {
 }
 
 // ---------------------------------------------------------------------------
+// Groq AI Feedback Settings
+// ---------------------------------------------------------------------------
+function onGroqStatusChanged(status) {
+  const dot  = document.getElementById("groq-status-dot");
+  const text = document.getElementById("groq-status-text");
+  if (!dot || !text) return;
+  const map = {
+    active:       { cls: "status-dot--active",  label: "Active" },
+    rate_limited: { cls: "status-dot--limited", label: "Rate Limited — please use your own key" },
+    invalid_key:  { cls: "status-dot--error",   label: "Invalid Key" },
+    error:        { cls: "status-dot--error",   label: "Unreachable" },
+  };
+  const info = map[status] || { cls: "status-dot--error", label: status };
+  dot.className    = "status-dot " + info.cls;
+  text.textContent = info.label;
+}
+
+function onGroqKeyInfo(usingUserKey) {
+  const src      = document.getElementById("groq-key-source");
+  const clearBtn = document.getElementById("groq-clear-btn");
+  if (src)      src.textContent    = usingUserKey ? "Your personal key" : "Project default";
+  if (clearBtn) clearBtn.style.display = usingUserKey ? "inline-flex" : "none";
+}
+
+function checkGroqStatus() {
+  if (backend) backend.check_groq_status();
+}
+
+function saveGroqKey() {
+  const input = document.getElementById("groq-key-input");
+  if (!input || !input.value.trim()) return;
+  if (!input.value.trim().startsWith("gsk_")) {
+    toast("Key must start with gsk_", "error");
+    return;
+  }
+  if (backend) {
+    backend.save_groq_key(input.value.trim());
+    input.value = "";
+    toast("API key saved locally.", "success");
+  }
+}
+
+function clearGroqKey() {
+  if (backend) {
+    backend.clear_groq_key();
+    toast("Reverted to project default key.", "info");
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Analytics — KPI summary row
 // ---------------------------------------------------------------------------
 function renderAnalyticsKpis(records) {
@@ -1718,7 +1771,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Navigation buttons
   document.querySelectorAll(".nav-item").forEach(btn => {
-    btn.addEventListener("click", () => navigate(btn.dataset.page));
+    btn.addEventListener("click", () => {
+      navigate(btn.dataset.page);
+      if (btn.dataset.page === "settings" && backend) {
+        backend.check_groq_status();
+      }
+    });
   });
 
   // Re-fetch goals & achievements when opening those pages

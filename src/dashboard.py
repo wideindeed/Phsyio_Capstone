@@ -143,6 +143,8 @@ class Bridge(QObject):
     goals_loaded = Signal(str)  # JSON array of goal dicts (with progress fields)
     achievements_loaded = Signal(str)  # JSON array of achievement dicts (locked/unlocked)
     course_progress_loaded = Signal(str)  # JSON array of completed course step rows
+    groq_status_changed = Signal(str)   # "active" | "rate_limited" | "invalid_key" | "error"
+    groq_key_info       = Signal(bool)  # True = user key active, False = default key active
 
     def __init__(self, worker: VisionWorker, token: str,
                  username: str, parent=None):
@@ -151,6 +153,13 @@ class Bridge(QObject):
         self._token    = token
         self._username = username
         self._goal_tracker = GoalTracker(API_URL, token)
+
+        from PyQt5.QtCore import QSettings
+        import groq_feedback as _groq_fb
+        self._qsettings = QSettings("PhysioVision", "PhysioVision")
+        _saved_key = self._qsettings.value("groq_api_key", None)
+        if _saved_key:
+            _groq_fb.set_user_key(_saved_key)
 
     # ── Thread-safe emit trampoline ───────────────────────────────────────
     def _emit_safe(self, signal_name: str, arg: str):
@@ -180,6 +189,10 @@ class Bridge(QObject):
             self.achievements_loaded.emit(arg)
         elif signal_name == "course_progress":
             self.course_progress_loaded.emit(arg)
+        elif signal_name == "groq_status":
+            self.groq_status_changed.emit(arg)
+        elif signal_name == "groq_key_info":
+            self.groq_key_info.emit(arg == "true")
 
     # ── JS → Python slots ─────────────────────────────────────────────────
 
@@ -461,6 +474,36 @@ class Bridge(QObject):
             except Exception as e:
                 print(f"[Bridge] reset_course error: {e}")
         threading.Thread(target=_delete, daemon=True).start()
+
+    # ── Groq AI Feedback slots ───────────────────────────────────────────
+
+    @Slot()
+    def check_groq_status(self):
+        import groq_feedback as _groq_fb
+        _groq_fb.check_api_status(
+            lambda status: self._emit_safe("groq_status", status)
+        )
+        self._emit_safe("groq_key_info", "true" if _groq_fb.using_user_key() else "false")
+
+    @Slot(str)
+    def save_groq_key(self, key: str):
+        import groq_feedback as _groq_fb
+        _groq_fb.set_user_key(key)
+        self._qsettings.setValue("groq_api_key", key.strip() if key.strip() else "")
+        self._emit_safe("groq_key_info", "true" if _groq_fb.using_user_key() else "false")
+        _groq_fb.check_api_status(
+            lambda status: self._emit_safe("groq_status", status)
+        )
+
+    @Slot()
+    def clear_groq_key(self):
+        import groq_feedback as _groq_fb
+        _groq_fb.set_user_key(None)
+        self._qsettings.remove("groq_api_key")
+        self._emit_safe("groq_key_info", "false")
+        _groq_fb.check_api_status(
+            lambda status: self._emit_safe("groq_status", status)
+        )
 
 
 # ---------------------------------------------------------------------------
