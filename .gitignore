@@ -4,6 +4,7 @@
 *.key
 *.pem
 secrets.json
+config.py
 
 # Dependencies (Too large and should be installed, not copied)
 node_modules/
