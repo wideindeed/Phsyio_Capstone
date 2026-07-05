@@ -61,9 +61,47 @@ VERIFICATION / SANITY CHECKS (per standing instruction)
    figure since that number is self-contained within the report's
    own start/end timestamps, but flagged here for honesty.
 
+RASPBERRY PI 5 BACKEND POWER (auth/sync API, not inference)
+--------------------------------------------------------------
+Method: onboard PMIC telemetry via `vcgencmd pmic_read_adc`, which
+exposes real per-rail voltage/current on the Pi 5 (no external meter
+needed). Power per rail computed as V x A, summed across all 12
+current-bearing rails (3V7_WL_SW, 3V3_SYS, 1V8_SYS, DDR_VDD2,
+DDR_VDDQ, 1V1_SYS, 0V8_SW, VDD_CORE, 3V3_DAC, 3V3_ADC, 0V8_AON, HDMI).
+Two independent load tests against the real api_server.py (FastAPI +
+SQLite + bcrypt/JWT), run on the Pi via remote desktop:
+
+Test A - hammered GET /health (no auth, no rate limit) with bursts of
+8 concurrent requests continuously for 15 seconds:
+  Idle:    1.68 W  (VDD_CORE: 0.509 A @ 0.747 V)
+  Loaded:  3.67 W  (VDD_CORE: 2.143 A @ 0.891 V, DVFS ramped up)
+  Delta:  +1.99 W  (+118%)
+
+Test B - reproduced the exact crypto cost of a real /login call
+(bcrypt hashpw+checkpw at cost=14, the server's own setting) in a
+tight loop for 15 seconds: 7 iterations completed, i.e. ~2.1 seconds
+of Pi CPU time per login-equivalent hash+verify pair.
+  True idle (from Test A):  1.68 W
+  Loaded:                   3.10 W
+  Delta:                   +1.42 W  (+85%)
+  (Test B's own "before" reading was contaminated - taken right after
+  Test A before VDD_CORE had settled back down - so it was discarded
+  in favor of Test A's clean idle baseline for this comparison.)
+
+Takeaway: the Pi backend draws roughly 1.7 W idle, rising to
+~3.1-3.7 W under sustained real request load (~+1.4-2.0 W). This is
+a genuine, repeatable hardware-level measurement (DVFS voltage on
+VDD_CORE visibly ramps from 0.75V to 0.89V under load, consistent
+with the Pi's CPU governor responding to real work, not noise).
+
 WHAT THIS DOES NOT COVER
 --------------------------
-- Power figure is whole-laptop, not process-isolated to PhysioVision.
-- Only one session was measured; no repeated trials for variance.
-- Raspberry Pi backend (auth/sync, not inference) power not yet
-  measured at time of writing this file — see below.
+- Laptop power figure is whole-machine, not process-isolated to
+  PhysioVision.
+- Only one laptop session was measured; no repeated trials for
+  variance.
+- Pi power figures are two 15-second synthetic load bursts, not a
+  measurement of average real-world traffic over time.
+- The 7-iteration bcrypt result is a very small sample (n=7); treat
+  the per-hash timing (~2.1s) as a rough order-of-magnitude figure,
+  not a tight estimate.
