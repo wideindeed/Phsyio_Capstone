@@ -376,6 +376,8 @@ def analyze_pushup_form_3d(world_landmarks, elbow_angle: float):
 #  PART 3: AUDIO (NON-BLOCKING)
 # =============================================================================
 
+_tts_lock = threading.Lock()
+
 def speak_async(text: str) -> None:
     """Fire-and-forget TTS call on a daemon thread. Silently ignored if voice is off."""
     if not state.VOICE_ON:
@@ -383,7 +385,7 @@ def speak_async(text: str) -> None:
 
     def _speak():
         try:
-            with timed("tts_synthesis"):
+            with _tts_lock, timed("tts_synthesis"):
                 engine = pyttsx3.init()
                 engine.say(text)
                 engine.runAndWait()

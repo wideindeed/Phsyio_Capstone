@@ -1,0 +1,69 @@
+TASK 3: MEASURED LATENCY + POWER (replacing old estimated numbers)
+====================================================================
+
+METHOD
+------
+- Latency: instrumented every pipeline stage directly in code
+  (src/latency_logger.py) — MediaPipe pose, each exercise's BiLSTM
+  .predict() call, the Groq feedback round-trip, and pyttsx3 TTS
+  synthesis — logging to latency_log.csv (timestamp, stage, ms).
+  Instrumentation touches only the call sites; no behavior changed.
+- Power: Windows powercfg /batteryreport, before/after snapshots
+  around one real session run on battery (laptop: MSI GF63 Thin 11SC).
+- Session covered: Lateral Raise (10 reps), Bicep Curl (4 reps),
+  Hip March (6 reps), run from source (python main.py), not the
+  packaged .exe.
+
+RESULTS (real measured numbers, 4180 log rows)
+------------------------------------------------
+MediaPipe pose (per frame):        n=4090   mean 28.5 ms   range 15-263 ms
+BiLSTM inference, cold start:      n=3      1275-2790 ms   (1st call per exercise, TF graph tracing)
+BiLSTM inference, steady state:    n=17     ~95-116 ms     (all calls after the first, per exercise)
+Groq feedback round-trip:          n=20     mean 155 ms
+TTS synthesis (successful calls):  n=27     mean 4614 ms   (1.5-7s, matches real speech length)
+
+Power: 4,206 mWh (4.206 Wh) drained over a measured 9 min 23 sec
+active-on-battery window (powercfg battery usage report).
+CAVEAT: this is whole-laptop draw (OS + background processes), not
+an isolated PhysioVision-only figure.
+
+VERIFICATION / SANITY CHECKS (per standing instruction)
+--------------------------------------------------------
+1. Checked for cold-start vs steady-state contamination in BiLSTM
+   numbers: confirmed real cost is ~100ms, not the 1.2-2.8s seen on
+   the first call per exercise. Reported both separately instead of
+   averaging them together, which would have overstated real cost by
+   ~10-20x.
+
+2. Found a real bug during the TTS check, not just a measurement
+   artifact: 22 of 49 tts_synthesis log entries were near-zero
+   (0.014-0.033ms) instead of a plausible speech duration. Root
+   cause: speak_async() called pyttsx3.init()/runAndWait() fresh on
+   a new thread per call with no synchronization; when a second call
+   (e.g. the LLM feedback line) fired while the previous call (e.g.
+   "Begin.") was still speaking, the second runAndWait() collided and
+   threw immediately, and the exception was silently swallowed by a
+   bare `except Exception: pass`, dropping that line of audio
+   entirely with no user-visible symptom. The alternating
+   big/near-zero pattern in the raw log (27 real vs 22 dropped) is
+   consistent with this: roughly every other spoken line was being
+   silently lost.
+   FIX: added a threading.Lock (_tts_lock) around the synthesis
+   block in engine.py's speak_async(), so overlapping calls now
+   queue and play in sequence instead of colliding and dropping
+   audio. Only the 27 successful (pre-fix) calls were used to compute
+   the reported TTS mean, since the failed ones do not reflect real
+   synthesis time.
+
+3. Noted a discrepancy between the user's recalled session window
+   (~9:01-9:11pm) and the battery report's actual timestamps
+   (~10:09-10:18pm) — does not affect the validity of the drain
+   figure since that number is self-contained within the report's
+   own start/end timestamps, but flagged here for honesty.
+
+WHAT THIS DOES NOT COVER
+--------------------------
+- Power figure is whole-laptop, not process-isolated to PhysioVision.
+- Only one session was measured; no repeated trials for variance.
+- Raspberry Pi backend (auth/sync, not inference) power not yet
+  measured at time of writing this file — see below.
