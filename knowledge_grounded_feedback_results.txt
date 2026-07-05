@@ -1,0 +1,83 @@
+===============================================================================
+EXPERIMENT 2: KNOWLEDGE-GROUNDED FEEDBACK RETRIEVAL LAYER — STATUS: VERIFIED
+===============================================================================
+
+WHAT WAS DONE
+--------------
+Problem: get_rep_feedback() (src/groq_feedback.py) previously sent the raw
+FSM/BiLSTM-detected issue label straight into a free-form Groq/LLaMA prompt
+with no clinical grounding -- the LLM had to invent a plausible-sounding
+correction cue from general knowledge, with no way to verify it was
+physiotherapy-sound. This is the exact gap Dr. Hend flagged relative to
+UbiPhysio (ACM IMWUT 2024), whose feedback module retrieves from a curated
+knowledge base before generating text.
+
+Fix: added src/feedback_knowledge_base.py, a hand-curated lookup table
+(exercise -> issue label -> clinically-phrased snippet naming the likely
+compensation mechanism + one concrete correction cue), covering every issue
+string the FSM/BiLSTM logic can actually emit across all 10 exercises.
+groq_feedback.py now looks up the snippet(s) for whatever issues were
+detected and injects them into the prompt as required grounding context
+before asking Groq to phrase a short spoken sentence -- shrinking the LLM's
+job from "invent physio advice" to "paraphrase this correctly."
+No vector DB used, per the plan (dict/lookup table keyed by issue type is
+sufficient since the issue vocabulary is small and fixed).
+
+VERIFICATION PERFORMED
+------------------------
+1. COVERAGE CHECK (the "no silent gaps" equivalent of a leakage check for
+   this task): manually collected every issue string actually emitted by
+   the FSM/BiLSTM code across engine.py and all 5 *_analyzer.py files (25
+   distinct issue strings across 10 exercises: e.g. Deep Squat's
+   "CRITICAL LEAN"/"Chest Up"/"BACK ROUNDING", Bicep Curl's 4-class
+   "Drag/Half Rep/Heave/Swing Cheat" labels, Lateral Raise's 5-class FSM
+   labels, and the generic "Compensatory Motion Detected" fallback used by
+   the 5 exercises with no fine-grained FSM issue detection: Sit to Stand,
+   Knee Extension, Wall Push-Up, Hip March, Shoulder Extension, Shoulder
+   Scaption). Cross-referenced against the knowledge base programmatically:
+   RESULT -- full coverage, 0 missing entries, 0 dead/unused entries.
+2. EDGE CASES: empty issue list (Excellent Form) and an unknown
+   exercise/issue both degrade to an empty grounding block with no
+   exception raised.
+3. LIVE END-TO-END TEST (real Groq API calls, not mocked, using the
+   project's configured key):
+     - Deep Squat + "CRITICAL LEAN" ->
+       "Remember to keep your chest tall and drive your knees forward over
+       your toes, let's try to maintain a better position."
+       (directly reflects the curated CRITICAL LEAN snippet's cue, not a
+       generic guess)
+     - Bicep Curl + "Heave Cheat (Back Momentum)" ->
+       "You're using too much momentum, let's keep the torso still and
+       curl using just your arm."
+       (matches the curated cue almost verbatim in substance)
+     - Knee Extension + generic "Compensatory Motion Detected" ->
+       "Great start on the knee extension, but remember to keep your trunk
+       still and extend your knee slowly, no compensatory motion."
+       (the generic fallback label still produced exercise-specific
+       guidance instead of vague filler, because the KB snippet for this
+       exercise/issue pair is itself exercise-specific)
+     - Excellent form (no issues) -> normal unqualified praise, unaffected
+       by the grounding layer, confirming it doesn't interfere with the
+       positive-feedback path.
+   All outputs respected the existing one-sentence / <=20-word / no-markdown
+   rules, confirming the grounding block didn't break the output-format
+   constraints already enforced in the prompt.
+
+FILES CHANGED
+--------------
+- src/feedback_knowledge_base.py (new): KNOWLEDGE_BASE dict +
+  get_grounding_snippet() / get_grounding_context() lookup functions.
+- src/groq_feedback.py: get_rep_feedback() now retrieves grounding context
+  before constructing the Groq prompt; two hardcoded API-failure fallback
+  strings are unchanged.
+
+WHAT THIS DOES NOT COVER (be upfront about this in the paper)
+----------------------------------------------------------------------------
+- The snippets were authored by us, not sourced from or reviewed by a
+  clinician -- this is "grounded in curated phrasing" in the sense the plan
+  describes, not "clinically validated." UbiPhysio's user study with actual
+  physiotherapists is still a real, unaddressed gap (this is item 8's
+  comparison table's honest point, not something this task claims to fix).
+- No automated check that the LLM's final spoken sentence is faithful to
+  the retrieved snippet beyond the 3 spot-checks above -- would need a
+  larger sample / human review to claim this rigorously for the paper.

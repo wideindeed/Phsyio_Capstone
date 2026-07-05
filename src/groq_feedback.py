@@ -1,6 +1,7 @@
 import threading
 import groq
 from config import GROQ_API_KEY
+from feedback_knowledge_base import get_grounding_context
 
 # ── Key management ─────────────────────────────────────────────────
 # _user_key: set at runtime from Settings page (takes priority)
@@ -45,6 +46,12 @@ def get_rep_feedback(exercise: str, rep_num: int,
     def _worker():
         try:
             issues_str = ', '.join(issues) if issues else 'none detected'
+            grounding = get_grounding_context(exercise, issues)
+            grounding_block = (
+                f"Clinical grounding for the detected issue(s) (base your "
+                f"correction cue on this, don't quote it verbatim):\n{grounding}\n\n"
+                if grounding else ""
+            )
             prompt = (
                 f"You are a physiotherapy assistant giving live spoken feedback "
                 f"after one rep of an exercise. Be brief, direct, and encouraging.\n"
@@ -52,6 +59,7 @@ def get_rep_feedback(exercise: str, rep_num: int,
                 f"Rep number: {rep_num}\n"
                 f"Form score: {score}/100\n"
                 f"Detected issues: {issues_str}\n\n"
+                f"{grounding_block}"
                 f"Rules:\n"
                 f"- Exactly ONE sentence, maximum 20 words\n"
                 f"- No markdown, no bullet points\n"

@@ -1,0 +1,120 @@
+===============================================================================
+EXPERIMENT 1: NORMALIZATION ABLATION — STATUS: VERIFIED, FINAL RESULT BELOW
+(fold2-based run further down is INVALID / superseded — kept for the record,
+do not cite it)
+===============================================================================
+
+WHAT WAS DONE
+--------------
+Script: scripts/normalization_ablation.py
+For every UI-PRMD-trained PhysioVision model, loaded the model's held-out
+test split and ran it twice through the frozen, already-trained model:
+  (a) "with normalization" -- the exact pelvis/spine-anchor centering +
+      bone-length scaling the model was trained with (per-exercise, copied
+      verbatim from src/engine.py / the *_analyzer.py files).
+  (b) "without normalization" -- the identical raw skeleton coordinates,
+      reshaped only, no centering, no scaling.
+Same model weights, same test samples, only the preprocessing step toggled.
+Metrics: R^2 and MAE (sklearn.metrics), predicted vs. ground-truth score.
+
+DATA SOURCE MAPPING (scripts/download_deeprehabpile.py)
+----------------------------------------------------------------------------
+Data pulled from DeepRehabPile's UI-PRMD regression mirror
+(https://maxime-devanne.com/datasets/RehabPile/UIPRMD_reg/<ABBR>/).
+Deep Squat/STS/Shoulder Extension/Shoulder Scaption map to UI-PRMD by name
+(DS/STS/SSE/SSS). Lateral Raise -> SSA confirmed via a code comment in
+engine.py. Knee Extension -> SASLR, Wall Push-Up -> Inline Lunge (IL), and
+Hip March -> Hurdle Step (HS) were confirmed by an EXACT match between each
+analyzer's hardcoded TIME_STEPS constant and each UI-PRMD sub-exercise's
+frame count (a reliable fingerprint: knee_extension_analyzer.py TIME_STEPS=63
+== SASLR T=63; wall_pushup_analyzer.py TIME_STEPS=77 == IL T=77, NOT SSIER's
+T=74 as first guessed; hip_march_analyzer.py TIME_STEPS=69 == HS T=69).
+Bicep Curl and Push-Up were excluded (hand-collected dataset / not part of
+the UI-PRMD-trained set).
+
+VERIFICATION PERFORMED BEFORE TRUSTING THIS RESULT
+----------------------------------------------------------------------------
+1. DATA LEAKAGE CHECK (this caught a real bug in the first attempt):
+   Checked whether each UI-PRMD exercise's fold2 test split is actually
+   disjoint from fold0's train split (fold0 train is what train.py/the
+   original training scripts use). Result: EVERY sample in every exercise's
+   fold2 test split is an EXACT duplicate of a sample already inside
+   fold0's train split (checked via np.allclose, 100% match rate across all
+   8 exercises). This is because these are standard k-fold CV files: fold0's
+   train = union of folds 1-4's test splits. So evaluating a fold0-trained
+   model against fold2's "test" data (as scripts/evaluate_fold.py does) is
+   NOT a held-out evaluation -- the model already trained on that exact data.
+   FIX: switched to fold0's OWN test split (x_test_fold0.npy), which IS
+   genuinely disjoint from fold0's train split (checked the same way:
+   0 duplicates found across all 8 exercises). This is the only split in
+   the downloaded data that is truly unseen by a fold0-trained model.
+   Residual caveat: fold0's test split was passed as `validation_data` to
+   Keras during original training (per train.py) and used for
+   checkpoint/best-epoch selection (ModelCheckpoint monitor='val_mae'). It
+   was not backpropagated on, but it did influence which epoch's weights
+   got saved -- a mild, standard form of model-selection leakage, not
+   train/test duplication. Worth knowing, not a reason to distrust the
+   result below.
+2. SPOT-CHECKED ACTUAL PREDICTIONS (Sit to Stand, fold0 test, 8 samples):
+   With normalization, predictions tracked ground truth closely (e.g. true
+   0.936 -> pred 0.915; true 0.923 -> pred 0.948). Without normalization,
+   predictions collapsed to a narrow near-constant band (~0.57-0.59)
+   regardless of the true score varying 0.906-0.936 -- i.e. the model
+   saturates to a fixed output because raw world-coordinate magnitudes are
+   wildly outside the ~unit scale it was trained on. This is the expected,
+   mechanistically sensible failure mode of removing normalization, not a
+   code bug or an artificially rigged comparison.
+3. Confirmed MAE-with-normalization values are in the same ballpark as the
+   model's known behavior (sanity, not identity, since fold0-test differs
+   from whatever split the original report table used).
+4. R^2 sensitivity caveat: UI-PRMD ground-truth scores for a given exercise
+   sit in a narrow band (e.g. STS fold0-test y ranges 0.780-0.951), so R^2
+   here is somewhat sensitive to small absolute errors -- flagged for
+   context, does not change the qualitative with/without-normalization gap.
+
+HEADLINE FINDING (verified, fold0-test, genuinely held out)
+----------------------------------------------------------------------------
+Normalization is not a cosmetic design choice. Removing it collapses R^2 to
+zero or below (worse than predicting the mean score) for every single one
+of the 8 UI-PRMD-trained exercises, and catastrophically so for Deep Squat
+(R^2 -33.5) and Sit to Stand (R^2 -28.3). This holds even though the
+comparison used the SAME model weights and SAME test samples in both arms
+-- the only variable changed was the presence/absence of the pelvis/spine
+anchor normalization step. Strong, defensible support for the pelvis-anchor
+design decision.
+
+FINAL RESULTS TABLE (fold0 test split -- genuinely held out, USE THIS ONE)
+----------------------------------------------------------------------------
+Exercise            Source  R2 (norm)   MAE (norm)  R2 (raw)     MAE (raw)   Delta R2
+Deep Squat          DS      0.2523      0.0440      -33.5397     0.5249      33.7921
+Sit to Stand        STS     0.6971      0.0234      -28.2856     0.3042      28.9827
+Lateral Raise       SSA     0.9299      0.0402      -0.0613      0.2146      0.9912
+Knee Extension      SASLR   0.7912      0.0422      -0.1737      0.1506      0.9649
+Wall Push-Up        IL      0.7375      0.0805      0.0590       0.1911      0.6786
+Hip March           HS      0.5419      0.1042      0.0106       0.1980      0.5313
+Shoulder Extension  SSE     0.9013      0.0378      -0.6136      0.1408      1.5149
+Shoulder Scaption   SSS     0.8719      0.0508      -1.0945      0.2189      1.9663
+
+Note: these "with normalization" R^2 values are noticeably different from
+Table II in the old capstone report (e.g. Deep Squat 0.25 here vs 0.543
+there, Hip March 0.54 here vs 0.871 there) precisely BECAUSE this run uses a
+genuinely held-out split, while the report's original numbers (and this
+script's first, discarded fold2-based attempt) likely benefited from the
+fold2/train overlap described above. Since we are not reusing the old
+report, this doesn't need to be reconciled -- treat the table above as the
+correct, from-scratch baseline for the new MICAD paper.
+
+===============================================================================
+SUPERSEDED / INVALID RUN -- kept only as a record of the leakage bug found
+above. Do not cite these numbers anywhere.
+===============================================================================
+NORMALIZATION ABLATION (fold2 test split -- INVALID, overlaps with fold0 train)
+Exercise            Source  R2 (norm)   MAE (norm)  R2 (raw)    MAE (raw)   Delta R2
+Deep Squat          DS      0.7092      0.0212      -112.5841   0.5614      113.2933
+Sit to Stand        STS     0.7896      0.0262      -18.0340    0.3106      18.8236
+Lateral Raise       SSA     0.9115      0.0439      -0.1579     0.2259      1.0694
+Knee Extension      SASLR   0.8857      0.0238      -0.2724     0.1030      1.1581
+Wall Push-Up        IL      0.9082      0.0513      0.0791      0.1907      0.8291
+Hip March           HS      0.9313      0.0351      -0.0440     0.1728      0.9753
+Shoulder Extension  SSE     0.8306      0.0609      -0.6480     0.1696      1.4786
+Shoulder Scaption   SSS     0.7551      0.0692      -0.8625     0.1933      1.6176

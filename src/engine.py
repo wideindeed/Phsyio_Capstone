@@ -48,6 +48,7 @@ from shoulder_scaption_analyzer   import ShoulderScaptionAnalyzer,   set_model a
 
 from groq_feedback import get_rep_feedback
 import groq_feedback as _groq_fb
+from latency_logger import timed, timed_get_rep_feedback as get_rep_feedback
 
 
 # =============================================================================
@@ -382,9 +383,10 @@ def speak_async(text: str) -> None:
 
     def _speak():
         try:
-            engine = pyttsx3.init()
-            engine.say(text)
-            engine.runAndWait()
+            with timed("tts_synthesis"):
+                engine = pyttsx3.init()
+                engine.say(text)
+                engine.runAndWait()
         except Exception:
             pass
 
@@ -682,7 +684,8 @@ class VisionWorker(QThread):
                 frame = cv2.flip(frame, 1)
             rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             h, w, ch = rgb_frame.shape
-            results = self.pose.process(rgb_frame)
+            with timed("mediapipe_pose"):
+                results = self.pose.process(rgb_frame)
 
             # AR overlay
             if state.AR_MODE:
@@ -809,7 +812,8 @@ class VisionWorker(QThread):
                                                    interpolation=cv2.INTER_LINEAR)
                         if PUSHUP_MODEL:
                             normalized = normalize_skeleton_pushup_live(warped_frames)
-                            prediction = PUSHUP_MODEL.predict(normalized, verbose=0)[0][0]
+                            with timed("bilstm::Push-Up"):
+                                prediction = PUSHUP_MODEL.predict(normalized, verbose=0)[0][0]
                         else:
                             prediction = 0.85
 
@@ -928,7 +932,8 @@ class VisionWorker(QThread):
                     try:
                         if CURL_MODEL:
                             model_input = normalize_skeleton_curl_live(self.sts_buffer)
-                            prediction = CURL_MODEL.predict(model_input, verbose=0)[0]
+                            with timed("bilstm::Bicep Curl"):
+                                prediction = CURL_MODEL.predict(model_input, verbose=0)[0]
 
                             class_idx = np.argmax(prediction)
                             confidence = prediction[class_idx]
@@ -1090,7 +1095,8 @@ class VisionWorker(QThread):
                         if LATERAL_RAISE_MODEL:
                             normalized = normalize_skeleton_lateral_raise_live(self.sts_buffer)
 
-                            prediction = LATERAL_RAISE_MODEL.predict(normalized, verbose=0)[0]
+                            with timed("bilstm::Lateral Raise"):
+                                prediction = LATERAL_RAISE_MODEL.predict(normalized, verbose=0)[0]
 
                             # Using the Regression logic
 
@@ -1313,10 +1319,12 @@ class VisionWorker(QThread):
                     # 2. KERAS PREDICTION
                     if self.exercise_mode == "squat" and SQUAT_MODEL:
                         normalized = normalize_skeleton_squat_live(warped_frames)
-                        prediction = SQUAT_MODEL.predict(normalized, verbose=0)[0][0]
+                        with timed("bilstm::Deep Squat"):
+                            prediction = SQUAT_MODEL.predict(normalized, verbose=0)[0][0]
                     elif self.exercise_mode == "sts" and STS_MODEL:
                         normalized = normalize_skeleton_sts_live(warped_frames)
-                        prediction = STS_MODEL.predict(normalized, verbose=0)[0][0]
+                        with timed("bilstm::Sit to Stand"):
+                            prediction = STS_MODEL.predict(normalized, verbose=0)[0][0]
                     else:
                         prediction = 0.85  # Fallback
 

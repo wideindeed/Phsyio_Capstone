@@ -1,6 +1,6 @@
 import numpy as np
 import cv2
-from groq_feedback import get_rep_feedback
+from latency_logger import timed, timed_get_rep_feedback as get_rep_feedback
 
 # ── Constants ──────────────────────────────────────────────────────────────────
 TIME_STEPS   = 69
@@ -116,7 +116,8 @@ class HipMarchAnalyzer:
             try:
                 if len(self.buffer) >= 5 and MODEL_GLOBAL:
                     normalized  = normalize_live(self.buffer)
-                    pred        = float(MODEL_GLOBAL.predict(normalized, verbose=0)[0][0])
+                    with timed("bilstm::Hip March"):
+                        pred    = float(MODEL_GLOBAL.predict(normalized, verbose=0)[0][0])
                     score       = raw_to_score(pred)
                     feedback    = "Excellent Form" if score >= 80 else "Compensatory Motion Detected"
 
