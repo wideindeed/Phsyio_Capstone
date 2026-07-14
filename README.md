@@ -418,7 +418,6 @@ python scripts/evaluate_fold.py
 | **Mahmood Muwafi** | Lead Developer |
 | **Afzal M. Harish** | AI & Model Development |
 | **Abdulsalam Alturk** | Backend & Systems |
-| **Hend ElMohandes** | Supervisor |
 
 **British University in Dubai** · Computer Science & Engineering · Capstone 2026
 
