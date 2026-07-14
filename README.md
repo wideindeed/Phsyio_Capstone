@@ -159,41 +159,45 @@ The Bicep Curl model uses a standard LSTM classifier with 5-class softmax output
 ```
 PhysioVision/
 │
-├── engine.py                        # AI pipeline, camera loop, VisionWorker (QThread)
-├── dashboard.py                     # PyQt5 Bridge (QWebChannel), MJPEG server
-├── auth.py                          # Login window (PyQt5), Google OAuth handler
-├── goals.py                         # Client-side GoalTracker & achievement definitions
+├── main.py                          # Entry point (PyInstaller target, delegates to src/dashboard.py)
+├── config.example.py                # Copy to config.py and set API_URL for your deployment
 │
-├── *_analyzer.py                    # Per-exercise state machine classes (one per exercise)
-│   ├── knee_extension_analyzer.py
-│   ├── wall_pushup_analyzer.py
-│   ├── hip_march_analyzer.py
-│   ├── shoulder_extension_analyzer.py
-│   └── shoulder_scaption_analyzer.py
+├── src/
+│   ├── engine.py                    # AI pipeline, camera loop, VisionWorker (QThread)
+│   ├── dashboard.py                 # PyQt5 Bridge (QWebChannel), launch_app(), MJPEG server
+│   ├── auth.py                      # Login window (PyQt5), Google OAuth handler
+│   ├── goals.py                     # Client-side GoalTracker & achievement definitions
+│   ├── groq_feedback.py             # Groq LLaMa-3.1 knowledge-grounded feedback layer
+│   ├── feedback_knowledge_base.py   # Curated per-mistake feedback cue lookup table
+│   ├── latency_logger.py            # Pipeline/API latency instrumentation
+│   ├── splash_player.py             # Startup splash screen
+│   └── *_analyzer.py                # Per-exercise state machine classes
+│       ├── knee_extension_analyzer.py
+│       ├── wall_pushup_analyzer.py
+│       ├── hip_march_analyzer.py
+│       ├── shoulder_extension_analyzer.py
+│       └── shoulder_scaption_analyzer.py
 │
-├── index.html                       # SPA entry point (Hub · Analysis · Records · Analytics
-│                                    #                  Goals · Achievements · Courses · Settings)
-├── app.js                           # Frontend logic, QWebChannel bindings, chart rendering
-├── styles.css                       # Design system (dark sidebar, clinical blue, sharp geometry)
+├── frontend/
+│   ├── index.html                   # SPA entry point (Hub · Analysis · Records · Analytics
+│   │                                 #                  Goals · Achievements · Courses · Settings)
+│   ├── app.js                       # Frontend logic, QWebChannel bindings, chart rendering
+│   └── styles.css                   # Design system (dark sidebar, clinical blue, sharp geometry)
 │
-├── train.py                         # Model training script (all 6 UI-PRMD exercises)
-├── download_data.py                 # Downloads UI-PRMD fold data from RehabPile
-├── download_all_folds.py            # Downloads all k-folds for existing exercises
-├── evaluate_all_models.py           # Cross-fold evaluation: MAE, RMSE, R² per model
-├── evaluate_bicep_curl.py           # Classification accuracy evaluation (proprietary dataset)
+├── scripts/
+│   ├── train.py                     # Per-exercise BiLSTM training script
+│   ├── train_curl_model.py          # Bicep Curl cheat-pattern classifier training script
+│   ├── download_deeprehabpile.py    # Downloads UI-PRMD fold data from RehabPile
+│   ├── evaluate_fold.py             # Cross-fold evaluation: MAE, RMSE, R² per model
+│   └── normalization_ablation.py    # Pelvis-anchor normalization ablation experiment
 │
-├── api_server.py                    # FastAPI server (deploy on Raspberry Pi)
-│
-├── *.keras                          # Trained model files (not committed — see below)
-├── UIPRMD_reg/                      # UI-PRMD dataset folds (not committed)
-│   ├── DS/fold0–4/
-│   ├── STS/fold0–2/
-│   └── ...
+├── models/                          # Trained .keras model files (committed)
+├── UIPRMD_STS/                      # UI-PRMD Sit-to-Stand dataset folds (sample folds committed)
 │
 └── requirements.txt
 ```
 
-> **Model files** (`.keras`) and dataset folders (`UIPRMD_reg/`) are excluded from version control due to file size. See [Training New Models](#training-new-models) to reproduce them.
+> The FastAPI backend (multi-user auth, cloud session sync, goals/achievements) runs on a separate Raspberry Pi deployment and is **not included in this repository**. The API Reference section below documents that backend's contract for anyone standing up their own instance.
 
 ---
 
@@ -210,8 +214,8 @@ PhysioVision/
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/your-org/physiovision.git
-cd physiovision
+git clone https://github.com/wideindeed/Physiology-LLM-Capstone.git
+cd Physiology-LLM-Capstone
 
 # 2. Create and activate a virtual environment
 python -m venv venv
@@ -220,16 +224,15 @@ venv\Scripts\activate        # Windows
 # 3. Install dependencies
 pip install -r requirements.txt
 
-# 4. Set the API URL environment variable
-set API_URL=https://your-api-server.com   # Windows CMD
-# or
-$env:API_URL="https://your-api-server.com" # PowerShell
+# 4. Configure the API URL
+copy config.example.py config.py   # Windows
+# then edit config.py and set API_URL to your deployment
 
-# 5. Place your trained .keras model files in the project root
-# (see Training New Models section)
+# 5. Trained .keras models are already included under models/
+# (see Training New Models to retrain from scratch)
 
 # 6. Launch the application
-python dashboard.py
+python main.py
 ```
 
 ### Server Deployment
@@ -240,8 +243,8 @@ The API server is designed to run on a **Raspberry Pi** (or any Linux host) behi
 # On the Raspberry Pi:
 
 # 1. Clone and set up
-git clone https://github.com/your-org/physiovision.git
-cd physiovision
+git clone https://github.com/wideindeed/Physiology-LLM-Capstone.git
+cd Physiology-LLM-Capstone
 python -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
@@ -281,28 +284,29 @@ PUBLIC_SERVER_URL=https://api.your-domain.com
 FRONTEND_URL=https://your-domain.com
 ```
 
-For the desktop client, only one variable is required:
+For the desktop client, only the API URL is required, set in `config.py` (copied from `config.example.py`):
 
-```env
-API_URL=https://api.your-domain.com
+```python
+API_URL = "https://api.your-domain.com"
 ```
 
 ---
 
 ## Training New Models
 
-Use `train.py` to retrain any exercise model from scratch using the UI-PRMD dataset.
+Use `scripts/train.py` to retrain a per-exercise BiLSTM model from scratch using the UI-PRMD dataset.
 
 ```bash
 # 1. Download the required dataset folds
-python download_data.py          # Downloads fold0 for all exercises
-python download_all_folds.py     # Downloads fold1+ for cross-validation
+python scripts/download_deeprehabpile.py
 
-# 2. Train all models (runs sequentially, ~15–30 min on CPU)
-python train.py
+# 2. Train a model
+python scripts/train.py
 
-# Output: one .keras file per exercise in the project root
+# Output: a .keras file per exercise, written to models/
 ```
+
+Bicep Curl uses a separate classifier trained on a proprietary CSV dataset via `scripts/train_curl_model.py`.
 
 **Training configuration:**
 
@@ -318,7 +322,7 @@ python train.py
 | Resampling | `cv2.resize` bilinear → fixed T frames per exercise |
 | Framework | Keras 2.15 · TensorFlow 2.15 |
 
-To add a new exercise, see the integration pattern in any existing `*_analyzer.py` file and follow the steps in `INTEGRATION_BRIEF.txt`.
+To add a new exercise, see the integration pattern in any existing `src/*_analyzer.py` file.
 
 ---
 
@@ -379,11 +383,10 @@ The FastAPI server exposes the following endpoints. All protected routes require
 
 ## Model Evaluation
 
-Models are evaluated across all available UI-PRMD k-folds. Run the evaluation scripts after downloading all folds:
+`scripts/evaluate_fold.py` computes MAE, RMSE, and R² for a held-out fold. It ships pointed at the Sit-to-Stand model/fold as an example — edit `MODEL_PATH` and `TEST_DIR` at the top of the script to evaluate a different exercise/fold.
 
 ```bash
-python evaluate_all_models.py    # Regression models (MAE, RMSE, R²)
-python evaluate_bicep_curl.py    # Classification accuracy (proprietary dataset)
+python scripts/evaluate_fold.py
 ```
 
 ### Results
